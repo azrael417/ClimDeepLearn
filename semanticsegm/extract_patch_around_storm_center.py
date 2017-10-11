@@ -27,7 +27,8 @@ print 'Number of rows: %d'%(table.get_number_of_rows())
 # note that you can use any mathematical/logical experssion here.
 # rules are like C++
 filt = teca_table_remove_rows.New()
-filt.set_mask_expression('!(track_id==96)')
+#filt.set_mask_expression('!(track_id==96)')
+filt.set_mask_expression('!((year==1996)&&(month==05)&&(day==19))')
 filt.set_input_connection(reader.get_output_port())
 
 tap_2 = teca_dataset_capture.New()
@@ -38,6 +39,7 @@ track_96 = as_teca_table(tap_2.get_dataset())
 
 # get the positions of points on the track
 # get radial size of the storm
+track_id = track_96.get_column('track_id').as_array()
 lon_96 = track_96.get_column('lon').as_array()
 lat_96 = track_96.get_column('lat').as_array()
 r0_96 = track_96.get_column('wind_radius_0').as_array()
@@ -50,11 +52,9 @@ hour_96 = track_96.get_column('hour').as_array()
 minute_96 = track_96.get_column('minute').as_array()
 print 'Track 96'
 print 'Number of rows in track 96: %d'%(track_96.get_number_of_rows())
-print 'lat lon size wind time year month day hour minute'
-'''
+print 'lon lat size wind time year month day hour minute'
 for i in xrange(len(lon_96)):
-  print '%f %f %f %f %f %f %f %f %f %f'%(lon_96[i], lat_96[i], r0_96[i], wind_96[i], time_96[i], year_96[i], month_96[i], day_96[i], hour_96[i], minute_96[i])
-'''
+  print '%f %f %f %f %f %f %f %f %f %f %f'%(track_id[i],lon_96[i], lat_96[i], r0_96[i], wind_96[i], time_96[i], year_96[i], month_96[i], day_96[i], hour_96[i], minute_96[i])
 
 data = {}
 lat = []
@@ -62,7 +62,6 @@ lon = []
 r_0 = []
 wind = []
 for ii in range(year_96.shape[0]):
-   print(str(year_96[ii]),str(month_96[ii]), str(day_96[ii]))
    if ii > 0 and (day_96[ii] != day_96[ii-1]):
       fname = "CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."+str(year_96[ii])+"-"+str(month_96[ii]).zfill(2)+"-"+str(day_96[ii]).zfill(2)+"-00000.pkl"
       data['lon'] = lon
