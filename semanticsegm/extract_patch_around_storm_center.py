@@ -61,14 +61,21 @@ lat = []
 lon = []
 r_0 = []
 wind = []
+print("Number of entries from this extraction is {}".format(year_96.shape[0]))
 for ii in range(year_96.shape[0]):
-   if ii > 0 and (day_96[ii] != day_96[ii-1]):
-      fname = "CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."+str(year_96[ii])+"-"+str(month_96[ii]).zfill(2)+"-"+str(day_96[ii]).zfill(2)+"-00000.pkl"
-      data['lon'] = lon
-      data['lat'] = lat
-      data['r_0'] = r_0 
-      data['wind'] = wind 
-      pickle.dump(data,open(fname,'wb'))
+   #if ii > 0 and (day_96[ii] != day_96[ii-1]):
+   fname = "CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."+str(year_96[ii])+"-"+str(month_96[ii]).zfill(2)+"-"+str(day_96[ii]).zfill(2)+"-00000.pkl"
+   data['track_id'] = track_id
+   data['year'] = year_96
+   data['month'] = month_96
+   data['day'] = day_96
+   data['hour'] = hour_96
+   data['minute'] = minute_96
+   data['lon'] = lon
+   data['lat'] = lat
+   data['r_0'] = r_0 
+   data['wind'] = wind 
+   pickle.dump(data,open(fname,'wb'))
    lat.append(lat_96[ii])
    lon.append(lon_96[ii])
    r_0.append(r0_96[ii])
