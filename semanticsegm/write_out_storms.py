@@ -33,15 +33,26 @@ if __name__ =="__main__":
    TMQ = data['TMQ']
    lat = data['lat']
    lon = data['lon']
+   print lat[:], lon[:]
    #Make image
    im = np.asarray(TMQ[0,:,:])
    #we'll put a dot at the right lat/lon for each image
    f1 = plt.figure(1)
-   plt.imshow(im)
+#   plt.imshow(im)
    for ii in np.unique(pkl_data['track_id']): 
      idx = np.where(pkl_data['track_id']==ii)[0][0]
      idx_lat = find_nearest(lat,pkl_data['lat'][idx])
      idx_lon = find_nearest(lat,pkl_data['lon'][idx])
+     print "pkl_data[lat] is:"
+     print pkl_data['lat'][:]
+     print "pkl_data[lat][idx] is:" 
+     print pkl_data['lat'][idx]
+     print "pkl_data[lon] is:"
+     print pkl_data['lon'][:]
+     print "pkl_data[lon][idx] is:"
+     print pkl_data['lon'][idx]
+     print "idx_lat and idx_lon are:"
+     print idx_lat, idx_lon
      idx_rad_lat_min = find_nearest(lat,pkl_data['lat'][idx]+pkl_data['r_0'][idx])
      idx_rad_lon_min = find_nearest(lon,pkl_data['lon'][idx]+pkl_data['r_0'][idx])
      idx_rad_lat_max = find_nearest(lat,pkl_data['lat'][idx]-pkl_data['r_0'][idx])
@@ -58,8 +69,13 @@ if __name__ =="__main__":
      except:
          print("Couldn't do it")
      plt.figure(1)
-     plt.plot(idx_lon, idx_lat, 'r*')
-   plt.savefig('test.png')   
+#     plt.plot(idx_lon, idx_lat, 'r*')
+#     plt.figure(1)
+#     plt.plot(data['lon'][:], data['lat'][:], TMQ[0,:,:])
+     TMQ_flipped = np.flip(TMQ[0,:,:],0)
+     plt.imshow(TMQ_flipped, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
+     plt.plot(pkl_data['lon'][idx], pkl_data['lat'][idx],'r*')
+   plt.savefig('test_flipped_TMQ.png')   
    plt.clf()
    plt.imshow(im)
    plt.savefig('raw.png')
