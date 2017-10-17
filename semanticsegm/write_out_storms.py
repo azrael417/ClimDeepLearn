@@ -9,9 +9,11 @@ import pickle
 import argparse
 from skimage import segmentation
 from skimage.future import graph
+from skimage.filters import threshold_otsu, threshold_local
 import netCDF4 as nc
 import glob 
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 def find_nearest(array,value):
     idx = (np.abs(array-value)).argmin()
@@ -36,11 +38,15 @@ if __name__ =="__main__":
    print lat[:], lon[:]
    #Make image
    im = np.asarray(TMQ[0,:,:])
+   fig,ax = plt.subplots(1)
+   TMQ_flipped = np.flip(TMQ[0,:,:],0)
+   TMQ_colored = TMQ_flipped
+   ax.imshow(TMQ_flipped, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
+   rect = []
    #we'll put a dot at the right lat/lon for each image
-   f1 = plt.figure(1)
-#   plt.imshow(im)
-   for ii in np.unique(pkl_data['track_id']): 
+   for jj,ii in enumerate(np.unique(pkl_data['track_id'])): 
      idx = np.where(pkl_data['track_id']==ii)[0][0]
+     '''
      idx_lat = find_nearest(lat,pkl_data['lat'][idx])
      idx_lon = find_nearest(lat,pkl_data['lon'][idx])
      print "pkl_data[lat] is:"
@@ -59,8 +65,7 @@ if __name__ =="__main__":
      idx_rad_lon_max = find_nearest(lon,pkl_data['lon'][idx]-pkl_data['r_0'][idx])
      print(idx_lat,idx_rad_lat_min,idx_rad_lat_max,idx_lon,idx_rad_lon_min,idx_rad_lon_max)
      f2 = plt.figure(2)
-     im_slice = im[idx_rad_lon_max:idx_rad_lon_min,idx_rad_lat_max:idx_rad_lat_min]
-     #im_slice = im[idx_rad_lat_max:idx_rad_lon_min,idx_rad_lat_max:idx_rad_lat_min]
+     im_slice = im[idx_rad_lat_max:idx_rad_lon_min,idx_rad_lat_max:idx_rad_lat_min]
      try:
          labels = segmentation.slic((im_slice-im_slice.mean())/im_slice.max(),compactness=0.01)
          plt.imshow(labels)
@@ -68,15 +73,26 @@ if __name__ =="__main__":
          plt.close()
      except:
          print("Couldn't do it")
-     plt.figure(1)
+     '''
 #     plt.plot(idx_lon, idx_lat, 'r*')
 #     plt.figure(1)
 #     plt.plot(data['lon'][:], data['lat'][:], TMQ[0,:,:])
-     TMQ_flipped = np.flip(TMQ[0,:,:],0)
-     plt.imshow(TMQ_flipped, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
-     plt.plot(pkl_data['lon'][idx], pkl_data['lat'][idx],'r*')
+     ax.plot(pkl_data['lon'][idx], pkl_data['lat'][idx],'r*')
+     storm_radius = pkl_data['r_0'][idx]
+     rect.append(patches.Rectangle((pkl_data['lon'][idx]-storm_radius,pkl_data['lat'][idx]-storm_radius),2*storm_radius,2*storm_radius,linewidth=1,edgecolor='r',facecolor="none"))
+     block_size = 35
+     lon_start = pkl_data['lon'][idx]-storm_radius
+     lat_start = pkl_data['lat'][idx]-storm_radius
+     im_slice = TMQ_flipped[lon_start:lon_start+2*storm_radius,lat_start:lat_start+2*storm_radius]
+     adaptive_thresh = threshold_local(im_slice,block_size,offset=10)
+     binary_adaptive = im_slice > adaptive_thresh 
+     TMQ_colored[lon_start:lon_start+2*storm_radius,lat_start:lat_start+2*storm_radius] = binary_adaptive
+   for r in rect:
+     ax.add_patch(r)
    plt.savefig('test_flipped_TMQ.png')   
    plt.clf()
-   plt.imshow(im)
+   plt.imshow(TMQ_flipped, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
    plt.savefig('raw.png')
+   plt.clf()
+   plt.imshow(TMQ_colored, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
    pickle.dump(TMQ[0,:,:],open('raw.pkl','wb'))
