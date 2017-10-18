@@ -9,7 +9,8 @@ import pickle
 import argparse
 from skimage import segmentation
 from skimage.future import graph
-from skimage.filters import threshold_otsu, threshold_local
+from skimage.filters import threshold_otsu, threshold_local, rank
+from skimage.morphology import disk
 import netCDF4 as nc
 import glob 
 import matplotlib.pyplot as plt
@@ -44,7 +45,8 @@ if __name__ =="__main__":
    #Flipping axes so we can match the lat/lon from the pkl file
    TMQ_flipped = np.flip(TMQ[0,:,:],0)
    lat_flipped = np.flip(lat,0)
-   lon_flipped = np.flip(lon,0)
+   #lon_flipped = np.flip(lon,0)
+   lon_flipped = lon 
    TMQ_colored = TMQ_flipped
    #When we render this, the image looks correct
    ax.imshow(TMQ_flipped, extent=(np.amin(data['lon'][:]), np.amax(data['lon'][:]), np.amin(data['lat'][:]), np.amax(data['lat'][:])))
@@ -65,21 +67,27 @@ if __name__ =="__main__":
      #This part is possibly not correct
      lon_start = pkl_data['lon'][idx]-storm_radius
      lat_start = pkl_data['lat'][idx]-storm_radius
-     lon_end = pkl_data['lon'][idx]+2*storm_radius
-     lat_end = pkl_data['lat'][idx]+2*storm_radius
+     lon_end = pkl_data['lon'][idx]+storm_radius
+     lat_end = pkl_data['lat'][idx]+storm_radius
      idx_lat_start = find_nearest(lat_flipped,lat_start)
      idx_lon_start = find_nearest(lon_flipped,lon_start)
      idx_lat_end = find_nearest(lat_flipped,lat_end)
      idx_lon_end = find_nearest(lon_flipped,lon_end)
-     im_slice = TMQ_flipped[idx_lon_end:idx_lon_start,idx_lat_end:idx_lat_start]
+     #im_slice = TMQ_flipped[idx_lon_end:idx_lon_start,idx_lat_end:idx_lat_start]
+     im_slice = TMQ_flipped[idx_lat_end:idx_lat_start,idx_lon_start:idx_lon_end]
      #we have a try catch to do unsup binarization
      try:
-       #we an replace this method with any other method of choice. We might also have to play 
-       # around with blocksize and offset for adaptive thresh. We might want fewer blocks
-       # or that is my intuition
-       adaptive_thresh = threshold_local(im_slice,block_size,offset=10)
-       binary_adaptive = im_slice > adaptive_thresh 
-       TMQ_colored[idx_lon_end:idx_lon_start,idx_lat_end:idx_lat_start] = binary_adaptive
+       #There are four different unsup binarization methods that I am testing below
+       #They all seem to perform similarly. Might need to tinker with them some more to 
+       #Make them work really well. The last one is just hard coded threshold
+       #adaptive_thresh = threshold_local(im_slice,block_size,offset=25)
+       #adaptive_thresh = threshold_otsu(im_slice)
+       #adaptive_thresh = rank.otsu((im_slice - im_slice.mean())/im_slice.max(),disk(5))
+       #You need the next line for the above three methods
+       #binary_adaptive = im_slice > adaptive_thresh 
+       binary_adaptive = im_slice > 50.
+       #TMQ_colored[idx_lon_end:idx_lon_start,idx_lat_end:idx_lat_start] = binary_adaptive
+       TMQ_colored[idx_lat_end:idx_lat_start,idx_lon_start:idx_lon_end] = binary_adaptive
      except:
        print('Unable to slice')
    #This adds the bounding box the the image
