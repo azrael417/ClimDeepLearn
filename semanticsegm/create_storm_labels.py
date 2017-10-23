@@ -70,7 +70,7 @@ for table_name in teca_subtables:
 				lon_end_index = find_nearest(lons, row['lon'] + row['r0'])
 				lon_start_index = find_nearest(lons, row['lon'] - row['r0'])
 
-				if lat_end_index > lat_start_index and lon_end_index > lon_start_index:
+				if len(np.unique(TMQ[lat_start: lat_end, lon_start: lon_end])) > 1:
 					calc_threshold = True
 
 				

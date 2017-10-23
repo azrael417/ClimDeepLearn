@@ -61,6 +61,7 @@ ________________________________________________________________________________
 
 Work that remains to be done:
 	- Improve/ tinker with unsupervised binarization technique
+	
 	- Most storms have a very small radius (the average radius is ~1 degree).  Since each grid cell is a 2.5 degree box, that's a huge problem!
 
 
