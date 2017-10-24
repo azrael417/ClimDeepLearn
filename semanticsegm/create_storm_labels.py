@@ -1,4 +1,8 @@
+import matplotlib as mpl
+mpl.use('agg')
+import matplotlib.pyplot as plt
 
+from mpl_toolkits.basemap import Basemap
 import numpy as np
 import argparse
 from skimage import segmentation
@@ -24,6 +28,24 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 def find_nearest(array,value):
     idx = (np.abs(array-value)).argmin()
     return idx
+
+def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
+			  year, month, day, time_step_index):
+	my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=180,
+                  llcrnrlon=min(lons), urcrnrlat=max(lats), urcrnrlon=max(lons), resolution = 'c')
+ 
+	xx, yy = np.meshgrid(lons, lats)
+	x_map,y_map = my_map(xx,yy)
+	x_plot, y_plot = my_map(storm_lon, storm_lat)
+	my_map.drawcoastlines(color="black")
+	my_map.contourf(x_map,y_map,img_array,64,cmap='viridis')
+	#my_map.plot(x_plot, y_plot, 'r*', color = "red")
+	my_map.colorbar()
+	my_map.contourf(x_map,y_map,storm_mask, alpha=0.7,cmap='gray')
+
+	mask_ex = plt.gcf()
+	mask_ex.savefig("./sample_seg_masks/teca_storm_mask{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
+	plt.clf()
 
 #The TECA subtables are the chopped up version of the .bin file (1 TECA subtable for each day).  The subtables are in .csv form
 path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables/"
@@ -70,7 +92,7 @@ for table_name in teca_subtables:
 				lon_end_index = find_nearest(lons, row['lon'] + row['r0'])
 				lon_start_index = find_nearest(lons, row['lon'] - row['r0'])
 
-				if len(np.unique(TMQ[lat_start: lat_end, lon_start: lon_end])) > 1:
+				if len(np.unique(TMQ[lat_start_index: lat_end_index, lon_start_index: lon_end_index])) > 1:
 					calc_threshold = True
 
 				
@@ -92,6 +114,10 @@ for table_name in teca_subtables:
 
 
 			if len(instance_masks) > 0:
+
+				#Plot sample semantic mask
+				plot_mask(lons, lats, TMQ, semantic_mask, row['lon'], row['lat'], year, month, day, time_step_index)
+
 				np.save(path_to_labels+"semantic_storm_labels/{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
 				instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
 				with open(path_to_labels+"instance_storm_labels/{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
