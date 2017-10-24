@@ -40,8 +40,10 @@ def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
 	my_map.drawcoastlines(color="black")
 	my_map.contourf(x_map,y_map,img_array,64,cmap='viridis')
 	#my_map.plot(x_plot, y_plot, 'r*', color = "red")
-	my_map.colorbar()
+	cbar = my_map.colorbar()
 	my_map.contourf(x_map,y_map,storm_mask, alpha=0.42,cmap='gray')
+	plt.title("TMQ with Segmented TECA Storms")
+	cbar.ax.set_ylabel('TMQ')
 
 	mask_ex = plt.gcf()
 	mask_ex.savefig("./sample_seg_masks/teca_storm_mask{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
