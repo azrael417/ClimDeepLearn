@@ -43,7 +43,7 @@ def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
 	cbar = my_map.colorbar()
 	my_map.contourf(x_map,y_map,storm_mask, alpha=0.42,cmap='gray')
 	plt.title("TMQ with Segmented TECA Storms")
-	cbar.ax.set_ylabel('TMQ')
+	cbar.ax.set_ylabel('TMQ kg $m^{-2}$')
 
 	mask_ex = plt.gcf()
 	mask_ex.savefig("./sample_seg_masks/teca_storm_mask{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
