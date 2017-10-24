@@ -41,7 +41,7 @@ def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
 	my_map.contourf(x_map,y_map,img_array,64,cmap='viridis')
 	#my_map.plot(x_plot, y_plot, 'r*', color = "red")
 	my_map.colorbar()
-	my_map.contourf(x_map,y_map,storm_mask, alpha=0.7,cmap='gray')
+	my_map.contourf(x_map,y_map,storm_mask, alpha=0.42,cmap='gray')
 
 	mask_ex = plt.gcf()
 	mask_ex.savefig("./sample_seg_masks/teca_storm_mask{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
@@ -61,6 +61,10 @@ for table_name in teca_subtables:
 	month = int(table_name[17:19])
 	day = int(table_name[20:22])
 	curr_table = pd.read_csv(path_to_subtables+table_name)
+
+	#Add 3 to the storm radii
+	#curr_table['r0'] = curr_table['r0'][:] + 3
+
 	#time_step_index refers to the 8 snapshots of data available for each data.
 	for time_step_index in range(8):
 		#Read in the TMQ data for the corresponding year, month, day, and time_step 
