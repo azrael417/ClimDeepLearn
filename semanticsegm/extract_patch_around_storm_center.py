@@ -2,7 +2,7 @@ from teca import *
 import os
 import pickle
 
-filename = './wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
+filename = '/global/cscratch1/sd/karthik_/TECA2.0Demo/demo_tracks/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './candidates_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 

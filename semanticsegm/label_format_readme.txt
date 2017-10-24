@@ -73,10 +73,11 @@ Work that remains to be done:
 			- The other complication is that the AR_detection algorithm needs to be a bit more refined when TMQ is the input. (When IVT is the input, the algorithm is better right out of the box)
 	- After I get the AR Labels stuff sorted out, I will create combined_semantic_labels and combined_instance_labels
 
-	- Last resort for AR labels:
+	- Use this source of IVT data from MERRA: 
+
+
+	- No longer relevant: - Last resort for AR labels:
 		- I found a place that gives pixelwise AR labels, but it is based on yet another data product.  I have already started a script to process the data, and I will need another day to finish it.
 		- If all else fails, we can just try to do segmentation based on the AR labels from this dataset.  (We won't be able to use anything from TECA with this dataset.)
 
 	- Explore this other source of IVT_data from NCEP (run the AR detection algorithm on this) http://cw3e.ucsd.edu/Publications/SIO-R1-Catalog/
-
-	- Use this source of IVT data from MERRA: /project/projectdirs/m1517/cascade/taobrien/csheilds_ar_landfall_lats_code/teca_test_data/

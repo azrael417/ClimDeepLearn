@@ -4,7 +4,7 @@ import pickle
 import csv
 #import pandas as pd
 
-filename = './wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
+filename = '/global/cscratch1/sd/karthik_/TECA2.0Demo/demo_tracks/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './candidates_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './tables_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 
@@ -49,16 +49,24 @@ print(day.size)
 print(hour.size)
 print(storm_id.size)
 
+print(np.mean(table.get_column('wind_radius_0').as_array()))
+print(np.mean(table.get_column('wind_radius_1').as_array()))
+print(np.mean(table.get_column('wind_radius_2').as_array()))
+print(np.mean(table.get_column('wind_radius_3').as_array()))
+print(np.mean(table.get_column('wind_radius_4').as_array()))
+print(np.mean(table.get_column('wind_radius_5').as_array()))
+
+
 save_filepath = "/global/cscratch1/sd/amahesh/segmentation_labels"
 
-np.save(save_filepath+"track_id", track_id)
-np.save(save_filepath+"lon", lon)
-np.save(save_filepath+"lat", lat)
-np.save(save_filepath+"r0", r0)
-np.save(save_filepath+"wind", wind)
-np.save(save_filepath+"time", time)
-np.save(save_filepath+"year", year)
-np.save(save_filepath+"month", month)
-np.save(save_filepath+"day", day)
-np.save(save_filepath+"hour", hour)
-np.save(save_filepath+"storm_id", storm_id)
+# np.save(save_filepath+"track_id", track_id)
+# np.save(save_filepath+"lon", lon)
+# np.save(save_filepath+"lat", lat)
+# np.save(save_filepath+"r0", r0)
+# np.save(save_filepath+"wind", wind)
+# np.save(save_filepath+"time", time)
+# np.save(save_filepath+"year", year)
+# np.save(save_filepath+"month", month)
+# np.save(save_filepath+"day", day)
+# np.save(save_filepath+"hour", hour)
+# np.save(save_filepath+"storm_id", storm_id)
