@@ -74,7 +74,7 @@ def get_AR_instance_masks(filepath, time_step, instance_masks, instance_boxes, n
 	for blob in ivt_blobs:
 		if calculate_blob_length(blob) > 1500:
 			ivt_blob_random_array = np.zeros((768,1152))
-			ivt_blob_random_array = 1
+			ivt_blob_random_array[blob] = 1
 			instance_masks.append(ivt_blob_random_array)
 
 			min_lat = lats[min(blob[0])]
@@ -177,6 +177,11 @@ for table_name in teca_subtables:
 		instance_boxes = []
 		
 
+		semantic_mask = get_AR_semantic_mask(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day),time_step_index, semantic_mask)
+
+		num_instances = 0
+		num_instances = get_AR_instance_masks(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day), time_step_index, instance_masks, instance_boxes, num_instances, lats, lons)
+
 		#time_step_index*3 yields 0,3,6,9,12,15,18,or21
 		curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
 		num_instances = len(curr_table_time)
@@ -184,17 +189,12 @@ for table_name in teca_subtables:
 			for index, row in curr_table_time.iterrows():
 				#Boolean determining whether or not to calculate the threshold of this storm.  
 				#If the storm is too small (and doesn't span multiple pixels), don't calculate its threshold
-				calc_threshold = False
 				lat_end_index = find_nearest(lats, row['lat'] + row['r0'])
 				lat_start_index = find_nearest(lats, row['lat'] - row['r0'])
 				lon_end_index = find_nearest(lons, row['lon'] + row['r0'])
 				lon_start_index = find_nearest(lons, row['lon'] - row['r0'])
 
 				if len(np.unique(TMQ[lat_start_index: lat_end_index, lon_start_index: lon_end_index])) > 1:
-					calc_threshold = True
-
-				
-				if calc_threshold:
 					#Set the relevant parts of the semantic_mask to 1
 					semantic_mask = binarize(TMQ, semantic_mask, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
 					
@@ -212,10 +212,7 @@ for table_name in teca_subtables:
 
 			
 
-		semantic_mask = get_AR_semantic_mask(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day),time_step_index, semantic_mask)
-
-		num_instances = get_AR_instance_masks(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day), time_step_index, instance_masks, instance_boxes, num_instances, lats, lons)
-
+		
 		if len(instance_masks) > 0:
 
 				#Plot sample semantic mask
