@@ -1,0 +1,53 @@
+cimport numpy as np
+cimport cython
+
+cdef inline int ravel_shift(   tuple indices, \
+                                int arrayRank, \
+                                np.int_t [:] arrayShape, \
+                                int dimension,  \
+                                int amount,     \
+                                int dimensionWraps):
+
+    cdef int runningProduct
+    cdef int n
+    cdef int i
+    cdef int np
+    cdef int thisIndex
+
+@cython.boundscheck(False)
+cdef tuple findNeighbors(   int raveledStartIndex, \
+                            np.float_t searchThreshold, \
+                            np.int_t [:] arrayShape, \
+                            int arrayRank, \
+                            list dimensionWraps, \
+                            np.float_t [:] inputArray, \
+                            np.int_t [:] isNotSearched, \
+    cdef list itemsToSearch #Running item search list
+    cdef list contiguousIndices #A list of indices
+    cdef int r #Current array dimension
+    cdef int testIndexLeft # A test index
+    cdef int testIndexRight # A test index
+    cdef tuple contiguousArray #A tuple of contiguous indices
+    cdef np.ndarray contiguousIndexArray #An array of contiguous indices
+    cdef int testInd #The raveled index of the test point
+
+    cdef tuple itemTuple #The tuple index of the current search item
+
+    cdef int shiftAmount
+
+cpdef list floodFillSearch( \
+                np.ndarray inputArray, \
+                np.float_t searchThreshold = 0.0, \
+    cdef np.ndarray[np.int_t,ndim=1] arrayShape
+    cdef int arrayRank
+    cdef int numArrayElements
+    cdef list dimensionWraps
+    cdef list contiguousAreas
+    cdef int k
+
+    cdef tuple contiguousArray 
+
+    cdef np.ndarray isNotSearched
+    cdef np.float_t [:] raveledInputArray = inputArray.ravel()
+    cdef np.int_t [:] raveledIsNotSearched = isNotSearched.ravel()
+    cdef int i

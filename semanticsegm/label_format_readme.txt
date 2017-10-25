@@ -5,8 +5,8 @@ Instance segmentation: the process of classifying each pixel as an instance of a
 
 Class_ids:
 	- 0 - nothing
-	- 1 - atmospheric river
-	- 2 - TECA_storm
+	- 1 - TECA_storm (tropical cyclone)
+	- 2 - AR
 
 height = 768 (latitude)
 width = 1152 (longitude)
