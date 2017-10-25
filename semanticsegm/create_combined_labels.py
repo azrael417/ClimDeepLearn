@@ -15,6 +15,7 @@ from os.path import isfile, join
 import pandas as pd
 import pickle
 import geopy.distance
+from scipy import ndimage
 
 import floodfillsearch.cFloodFillSearch as flood
 
@@ -62,7 +63,7 @@ def get_AR_semantic_mask(filepath, time_step, semantic_mask):
 	ivt_blobs = get_AR_blobs(filepath, time_step)
 	for blob in ivt_blobs:
 	    if calculate_blob_length(blob) > 1500:
-	    	semantic_mask[blob] = 1
+	    	semantic_mask[blob] = 2
 	    
 	#ivt_blob_random_array = np.ma.masked_less_equal(ivt_blob_random_array,0)
 	return semantic_mask
@@ -90,7 +91,29 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 	#adaptive_thresh = threshold_local(im_slice,block_size,offset=25)
     #adaptive_thresh = rank.otsu((im_slice - im_slice.mean())/im_slice.max(),disk(5))
 	adaptive_thresh = threshold_otsu(im_slice)
-	binary_adaptive = im_slice > adaptive_thresh 
+	binary_adaptive = im_slice > adaptive_thresh
+
+	#Select the largest contiguous region
+	def filter_isolated_cells(array, struct):
+	    """ Return array with completely isolated single cells removed
+	    :param array: Array with completely isolated single cells
+	    :param struct: Structure array for generating unique regions
+	    :return: Array with minimum region size < max_size
+	    """
+	    filtered_array = np.copy(array)
+	    id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
+	    print(num_ids)
+	    id_sizes = np.array(ndimage.sum(array, id_regions, range(num_ids + 1)))
+	    area_mask = (id_sizes < np.amax(id_sizes))
+	    filtered_array[area_mask[id_regions]] = 0
+	    return filtered_array
+
+	# Run function on sample array
+	binary_adaptive = filter_isolated_cells(binary_adaptive, struct=np.ones((3,3)))
+
+	# Plot output, with all isolated single cells removed
+	#plt.imshow(filtered_array, cmap=plt.cm.gray, interpolation='nearest')
+
 	mask[lat_start: lat_end, lon_start: lon_end] = binary_adaptive
 	return mask
 
