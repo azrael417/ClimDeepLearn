@@ -88,6 +88,9 @@ def get_AR_instance_masks(filepath, time_step, instance_masks, instance_boxes, n
 #unsupervised technique - binarize a portion of the image by setting the mask to either 1 or 0
 def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 	im_slice = img_array[lat_start: lat_end, lon_start: lon_end]
+	intersect = False
+	if np.any(mask[lat_start: lat_end, lon_start: lon_end] > 0):
+		intersect = True
 	#adaptive_thresh = threshold_local(im_slice,block_size,offset=25)
     #adaptive_thresh = rank.otsu((im_slice - im_slice.mean())/im_slice.max(),disk(5))
 	adaptive_thresh = threshold_otsu(im_slice)
@@ -106,6 +109,8 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 	    id_sizes = np.array(ndimage.sum(array, id_regions, range(num_ids + 1)))
 	    area_mask = (id_sizes < np.amax(id_sizes))
 	    filtered_array[area_mask[id_regions]] = 0
+	    id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
+	    print("HERE" + str(num_ids))
 	    return filtered_array
 
 	# Run function on sample array
@@ -115,7 +120,7 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 	#plt.imshow(filtered_array, cmap=plt.cm.gray, interpolation='nearest')
 
 	mask[lat_start: lat_end, lon_start: lon_end] = binary_adaptive
-	return mask
+	return mask, intersect
 
 def find_nearest(array,value):
     idx = (np.abs(array-value)).argmin()
@@ -175,6 +180,8 @@ for table_name in teca_subtables:
 
 		#For instance segmentation, the ground truth boxes surrounding the storm are also stored.  They are in the format of (N, 5) --> (x1, y1, x2, y2, classid)
 		instance_boxes = []
+
+		intersects =[]
 		
 
 		semantic_mask = get_AR_semantic_mask(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day),time_step_index, semantic_mask)
@@ -184,7 +191,7 @@ for table_name in teca_subtables:
 
 		#time_step_index*3 yields 0,3,6,9,12,15,18,or21
 		curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
-		num_instances = len(curr_table_time)
+		num_instances += len(curr_table_time)
 		if len(curr_table_time > 0):
 			for index, row in curr_table_time.iterrows():
 				#Boolean determining whether or not to calculate the threshold of this storm.  
@@ -196,11 +203,12 @@ for table_name in teca_subtables:
 
 				if len(np.unique(TMQ[lat_start_index: lat_end_index, lon_start_index: lon_end_index])) > 1:
 					#Set the relevant parts of the semantic_mask to 1
-					semantic_mask = binarize(TMQ, semantic_mask, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-					
+					semantic_mask, intersect = binarize(TMQ, semantic_mask, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+					intersects.append(intersect)
+
 					#Create a new mask for each instance, and set the relevant parts to 1
 					instance_mask = np.zeros((768,1152))
-					instance_mask = binarize(TMQ, instance_mask, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+					instance_mask, _ = binarize(TMQ, instance_mask, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
 					instance_masks.append(instance_mask)
 
 					#The ground trouth boxes are in the form x1, y1, x2, y2, class_id
@@ -209,7 +217,7 @@ for table_name in teca_subtables:
 					lon_end = row['lon'] + row['r0']
 					lon_start = row['lon'] - row['lon']
 					instance_boxes.append(np.asarray([lat_start, lon_start, lat_end, lon_end, 1]))
-
+					print(instance_boxes)
 			
 
 		
@@ -217,9 +225,14 @@ for table_name in teca_subtables:
 
 				#Plot sample semantic mask
 				plot_mask(lons, lats, TMQ, semantic_mask, row['lon'], row['lat'], year, month, day, time_step_index)
-
-				np.save(path_to_labels+"semantic_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
-				instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
-				with open(path_to_labels+"instance_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
-					pickle.dump(instance_labels,f)
+				if np.any(np.asarray(intersects)):
+					np.save(path_to_labels+"semantic_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+					instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
+					with open(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
+						pickle.dump(instance_labels,f)
+				else:
+					np.save(path_to_labels+"semantic_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+					instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
+					with open(path_to_labels+"instance_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
+						pickle.dump(instance_labels,f)
 
