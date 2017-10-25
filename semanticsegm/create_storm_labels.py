@@ -46,7 +46,7 @@ def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
 	cbar.ax.set_ylabel('TMQ kg $m^{-2}$')
 
 	mask_ex = plt.gcf()
-	mask_ex.savefig("./sample_seg_masks/teca_storm_mask{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
+	mask_ex.savefig("./sample_seg_masks/teca_storm_mask+3{:04d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index))
 	plt.clf()
 
 #The TECA subtables are the chopped up version of the .bin file (1 TECA subtable for each day).  The subtables are in .csv form
@@ -65,7 +65,7 @@ for table_name in teca_subtables:
 	curr_table = pd.read_csv(path_to_subtables+table_name)
 
 	#Add 3 to the storm radii
-	#curr_table['r0'] = curr_table['r0'][:] + 3
+	curr_table['r0'] = curr_table['r0'][:] + 3
 
 	#time_step_index refers to the 8 snapshots of data available for each data.
 	for time_step_index in range(8):
