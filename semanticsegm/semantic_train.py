@@ -164,6 +164,11 @@ def get_tmq(filepath):
     with nc.Dataset(filepath) as fin:
         TMQ = fin['TMQ'][:]
     return TMQ
+
+def temp_load_image(filepath):
+    with nc.Dataset(filepath) as fin:
+        TMQ = fin['TMQ'][:][0:1,:,:]
+    return TMQ
     
 def train():
     """The main function that runs training"""
@@ -181,17 +186,19 @@ def train():
     #cam5_files= [f for f in cam5_files if "CAM5" in f]
     image =[]
     #read in data
-    for each_image in cam5_files:
-        image.extend(get_tmq(each_image))
-    image = np.asarray(image).astype('float32')
+    # for each_image in cam5_files:
+    #     image.extend(get_tmq(each_image))
+    # image = np.asarray(image).astype('float32')
+    image = temp_load_image("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2012-10-25-00000.nc")
 
     ih = np.array(768,dtype='float32')
     iw = np.array(1152,dtype='float32')
-    gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/instance_boxes.npy").astype('float32')
-    gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/instance_masks.npy").astype('float32')
-    img_id = np.load("/home/mudigonda/files_for_first_maskrcnn_test/img_ids.npy")
+    gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_boxes.npy").astype('float32')
+    gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_masks.npy").astype('float32')
+    img_id = np.array(2012102500,dtype='float32')
     num_instances = np.array(gt_boxes.shape[0], dtype='float32')
     #image = get_tmq(cam5_files)
+    
     data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=16,
             dtypes=(
                 image.dtype, ih.dtype, iw.dtype, 
@@ -203,6 +210,7 @@ def train():
     tf.add_to_collection(tf.GraphKeys.QUEUE_RUNNERS, data_queue_runner)
     (image, ih, iw, gt_boxes, gt_masks, num_instances, img_id) =  data_queue.dequeue()
     im_shape = tf.shape(image)
+    #image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
     image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
 
     ## network
