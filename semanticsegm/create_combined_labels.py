@@ -155,7 +155,7 @@ path_to_labels = "/global/cscratch1/sd/amahesh/segmentation_labels/"
 path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
 
 
-for table_name in teca_subtables:
+for table_name in teca_subtables[:12]:
 	year = int(table_name[12:16])
 	month = int(table_name[17:19])
 	day = int(table_name[20:22])
@@ -170,7 +170,7 @@ for table_name in teca_subtables:
 		with nc.Dataset(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day)) as fin:
 			TMQ = fin['TMQ'][:][time_step_index]
 			lats = fin['lat'][:]
-			lons = fin['lon'][:]
+			lons = fin['lon'][:] 
 		
 		#The semantic mask is one mask with 1's where the storms are and 0's everywhere else
 		semantic_mask = np.zeros((768,1152))
@@ -192,6 +192,7 @@ for table_name in teca_subtables:
 		#time_step_index*3 yields 0,3,6,9,12,15,18,or21
 		curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
 		num_instances += len(curr_table_time)
+		#ignore num_instances it is a stupid variable
 		if len(curr_table_time > 0):
 			for index, row in curr_table_time.iterrows():
 				#Boolean determining whether or not to calculate the threshold of this storm.  
@@ -224,15 +225,19 @@ for table_name in teca_subtables:
 		if len(instance_masks) > 0:
 
 				#Plot sample semantic mask
-				plot_mask(lons, lats, TMQ, semantic_mask, row['lon'], row['lat'], year, month, day, time_step_index)
+				#plot_mask(lons, lats, TMQ, semantic_mask, row['lon'], row['lat'], year, month, day, time_step_index)
 				if np.any(np.asarray(intersects)):
-					np.save(path_to_labels+"semantic_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
-					instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
-					with open(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
-						pickle.dump(instance_labels,f)
+					np.save(path_to_labels+"semantic_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+					#with open(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
+					#	pickle.dump(instance_labels,f)
+					#instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
+					np.save(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}_instance_boxes.npy".format(year,month,day,time_step_index), np.asarray(instance_boxes))
+					np.save(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}_instance_masks.npy".format(year,month,day,time_step_index), np.asarray(instance_masks))
 				else:
-					np.save(path_to_labels+"semantic_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
-					instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
-					with open(path_to_labels+"instance_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
-						pickle.dump(instance_labels,f)
+					np.save(path_to_labels+"semantic_combined_labels/{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+					#instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
+					np.save(path_to_labels+"instance_combined_labels/{:04d}{:02d}{:02d}{:02d}_instance_boxes.npy".format(year,month,day,time_step_index), np.asarray(instance_boxes))
+					np.save(path_to_labels+"instance_combined_labels/{:04d}{:02d}{:02d}{:02d}_instance_masks.npy".format(year,month,day,time_step_index), np.asarray(instance_masks))
+					# with open(path_to_labels+"instance_combined_labels/{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
+					# 	pickle.dump(instance_labels,f)
 
