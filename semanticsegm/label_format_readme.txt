@@ -8,7 +8,7 @@ Class_ids:
 	- 1 - TECA_storm (tropical cyclone)
 	- 2 - AR
 
-height = 768 (latitude)
+height = 768 (latitude)sdfdsfdsf
 width = 1152 (longitude)
 
 How labels are stored for semantic segmentation:
