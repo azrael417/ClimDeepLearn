@@ -77,10 +77,10 @@ def get_AR_instance_masks(filepath, time_step, instance_masks, instance_boxes, n
 			ivt_blob_random_array[blob] = 1
 			instance_masks.append(ivt_blob_random_array)
 
-			min_lat = lats[min(blob[0])]
-			min_lon = lons[min(blob[1])]
-			max_lat = lats[max(blob[0])]
-			max_lon = lons[max(blob[1])]
+			min_lat = min(blob[0])
+			min_lon = min(blob[1])
+			max_lat = max(blob[0])
+			max_lon = max(blob[1])
 			instance_boxes.append(np.asarray([min_lat, min_lon, max_lat, max_lon, 2]))
 			num_instances+=1
 	return num_instances
@@ -105,12 +105,10 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
 	    """
 	    filtered_array = np.copy(array)
 	    id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
-	    print(num_ids)
 	    id_sizes = np.array(ndimage.sum(array, id_regions, range(num_ids + 1)))
 	    area_mask = (id_sizes < np.amax(id_sizes))
 	    filtered_array[area_mask[id_regions]] = 0
 	    id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
-	    print("HERE" + str(num_ids))
 	    return filtered_array
 
 	# Run function on sample array
@@ -155,7 +153,7 @@ path_to_labels = "/global/cscratch1/sd/amahesh/segmentation_labels/"
 path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
 
 
-for table_name in teca_subtables[:12]:
+for table_name in teca_subtables[:2]:
 	year = int(table_name[12:16])
 	month = int(table_name[17:19])
 	day = int(table_name[20:22])
@@ -213,11 +211,8 @@ for table_name in teca_subtables[:12]:
 					instance_masks.append(instance_mask)
 
 					#The ground trouth boxes are in the form x1, y1, x2, y2, class_id
-					lat_end = row['lat'] + row['r0']
-					lat_start = row['lat'] - row['r0']
-					lon_end = row['lon'] + row['r0']
-					lon_start = row['lon'] - row['lon']
-					instance_boxes.append(np.asarray([lat_start, lon_start, lat_end, lon_end, 1]))
+					
+					instance_boxes.append(np.asarray([lat_start_index, lon_start_index, lat_end_index, lon_end_index, 1]))
 					print(instance_boxes)
 			
 

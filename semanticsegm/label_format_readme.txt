@@ -18,7 +18,7 @@ How labels are stored for instance segmentation:
 	- For a given image, there are three fields: [N, gt_boxes, gt_masks]
 	- gt means ground truth
 	- N = the total number of instances of any class.  N is a scalar
-	- gt_boxes.shape = (N, 5) (the 5 correspond to x1, y1, x2, y2, class_id)
+	- gt_boxes.shape = (N, 5) (the 5 correspond to lat, lon, lat, lon, class_id)
 	- gt_masks.shape = (N, height of image, width of image)
 
 Mask R-CNN is the model we would test for instance segmentation
