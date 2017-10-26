@@ -184,21 +184,31 @@ def train():
     #combined_files = glob.glob("/global/cscratch1/sd/amahesh/segmentation_labels/instance_combined_labels")
     cam5_files = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.*")
     #cam5_files= [f for f in cam5_files if "CAM5" in f]
-    image =[]
+    #image =[]
     #read in data
     # for each_image in cam5_files:
     #     image.extend(get_tmq(each_image))
     # image = np.asarray(image).astype('float32')
+    
+    #Temp_load_image load 1 image with the format (1,height, width) 
     image = temp_load_image("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2012-10-25-00000.nc")
 
     ih = np.array(768,dtype='float32')
     iw = np.array(1152,dtype='float32')
     gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_boxes.npy").astype('float32')
     gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_masks.npy").astype('float32')
+    
+
+
     img_id = np.array(2012102500,dtype='float32')
-    num_instances = np.array(gt_boxes.shape[0], dtype='float32')
+    num_instances = np.array([gt_boxes.shape[0],gt_boxes.shape[0]], dtype='float32')
     #image = get_tmq(cam5_files)
     
+
+    print(image.shape)
+    print(gt_boxes.shape)
+    print(gt_masks.shape)
+
     data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=16,
             dtypes=(
                 image.dtype, ih.dtype, iw.dtype, 
