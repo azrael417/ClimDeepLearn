@@ -153,7 +153,7 @@ path_to_labels = "/global/cscratch1/sd/amahesh/segmentation_labels/"
 path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
 
 
-for table_name in teca_subtables[:2]:
+for table_name in teca_subtables[:40]:
 	year = int(table_name[12:16])
 	month = int(table_name[17:19])
 	day = int(table_name[20:22])
