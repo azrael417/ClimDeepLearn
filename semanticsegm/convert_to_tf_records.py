@@ -64,18 +64,18 @@ def _convert_to_tfexample(image_id, image_data,
   """ just write a raw input"""
   return tf.train.Example(features=tf.train.Features(feature={
     'image/img_id': _int64_feature(image_id),
-    'image/encoded': _bytes_feature(tf.compat.as_bytes(image_data.tostring()))),
+    'image/encoded': _bytes_feature(tf.compat.as_bytes(image_data.tostring())),
     'image/height': _int64_feature(height),
     'image/width': _int64_feature(width),
     'label/num_instances': _int64_feature(num_instances),  # N
-    'label/gt_boxes': _bytes_feature(tf.compat.as_bytes(gt_boxes.tostring()))),  # of shape (N, 5), (x1, y1, x2, y2, classid)
-    'label/gt_masks': _bytes_feature(tf.compat.as_bytes(gt_masks.tostring())))  # of shape (N, height, width)
+    'label/gt_boxes': _bytes_feature(tf.compat.as_bytes(gt_boxes.tostring())),  # of shape (N, 5), (x1, y1, x2, y2, classid)
+    'label/gt_masks': _bytes_feature(tf.compat.as_bytes(gt_masks.tostring()))  # of shape (N, height, width)
     #'label/encoded': _bytes_feature(label_data),  # deprecated, this is used for pixel-level segmentation
   }))
 
 dataset_dir = '/home/mudigonda/files_for_first_maskrcnn_test/'
 record_dir = dataset_dir + 'records/'
-filenames = glob.glob(dataset_dir + '2*boxes.npy')
+filenames = glob.glob(dataset_dir + '*boxes.npy')
 num_images = len(filenames)
   
 num_images_per_shard = 6
@@ -86,12 +86,12 @@ print(num_shards)
 
 
 for shard_id in range(1,num_shards+1):
-  for i in range(num_shards):
+  for i in range(num_images_per_shard):
     output_filename = _get_dataset_filename(record_dir, 'train', shard_id, num_shards)
     options = tf.python_io.TFRecordOptions(TFRecordCompressionType.ZLIB)
     with tf.python_io.TFRecordWriter(output_filename, options=options) as tfrecord_writer:
       #Get index of first digit
-      data_filename = filenames[shard_id * num_images_per_shard + i]
+      data_filename = filenames[(shard_id-1) * num_images_per_shard + i]
       id_start_index = min([i for i, c in enumerate(data_filename) if c.isdigit()])
       img_id_string = data_filename[id_start_index:id_start_index+10]
       img_id = int(img_id_string)

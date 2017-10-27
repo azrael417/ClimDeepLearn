@@ -246,7 +246,7 @@ def train():
     print(gt_boxes.shape)
     print(gt_masks.shape)
 
-    data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=0,
+    data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=1,
             dtypes=(
                 image.dtype, ih.dtype, iw.dtype, 
                 gt_boxes.dtype, gt_masks.dtype, 
