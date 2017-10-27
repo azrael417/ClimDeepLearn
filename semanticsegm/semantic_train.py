@@ -12,6 +12,8 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from time import gmtime, strftime
 import netCDF4 as nc
+from tensorflow.python.lib.io.tf_record import TFRecordCompressionType
+
 
 #sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import libs.configs.config_v1 as cfg
@@ -169,6 +171,48 @@ def temp_load_image(filepath):
     with nc.Dataset(filepath) as fin:
         TMQ = fin['TMQ'][:][0:1,:,:]
     return TMQ
+
+def read(tfrecords_filename):
+
+  if not isinstance(tfrecords_filename, list):
+    tfrecords_filename = [tfrecords_filename]
+  filename_queue = tf.train.string_input_producer(
+    tfrecords_filename, num_epochs=1)
+
+  options = tf.python_io.TFRecordOptions(TFRecordCompressionType.ZLIB)
+  reader = tf.TFRecordReader(options=options)
+  _, serialized_example = reader.read(filename_queue)
+  features = tf.parse_single_example(
+    serialized_example,
+    features={
+      'image/img_id': tf.FixedLenFeature([], tf.int64),
+      'image/encoded': tf.FixedLenFeature([], tf.string),
+      'image/height': tf.FixedLenFeature([], tf.int64),
+      'image/width': tf.FixedLenFeature([], tf.int64),
+      'label/num_instances': tf.FixedLenFeature([], tf.int64),
+      'label/gt_masks': tf.FixedLenFeature([], tf.string),
+      'label/gt_boxes': tf.FixedLenFeature([], tf.string)
+      #'label/encoded': tf.FixedLenFeature([], tf.string),
+      })
+  # image = tf.image.decode_jpeg(features['image/encoded'], channels=3)
+  img_id = tf.cast(features['image/img_id'], tf.int32)
+  ih = tf.cast(features['image/height'], tf.int32)
+  iw = tf.cast(features['image/width'], tf.int32)
+  num_instances = tf.cast(features['label/num_instances'], tf.int32)
+  image = tf.decode_raw(features['image/encoded'], tf.float32)
+  imsize = tf.size(image)
+  image = tf.reshape(image, (ih, iw, 1))
+  #image = tf.cond(tf.equal(imsize, ih * iw), \
+  #        lambda: tf.image.grayscale_to_rgb(tf.reshape(image, (ih, iw, 1))), \
+  #        lambda: tf.reshape(image, (ih, iw, 3)))
+
+  gt_boxes = tf.decode_raw(features['label/gt_boxes'], tf.float32)
+  gt_boxes = tf.reshape(gt_boxes, [num_instances, 5])
+  gt_masks = tf.decode_raw(features['label/gt_masks'], tf.uint8)
+  gt_masks = tf.cast(gt_masks, tf.int32)
+  gt_masks = tf.reshape(gt_masks, [num_instances, ih, iw])
+  
+  return image, ih, iw, gt_boxes, gt_masks, num_instances, img_id
     
 def train():
     """The main function that runs training"""
@@ -181,14 +225,7 @@ def train():
     #                          FLAGS.im_batch,
     #                          is_training=True)
     
-    #combined_files = glob.glob("/global/cscratch1/sd/amahesh/segmentation_labels/instance_combined_labels")
     cam5_files = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.*")
-    #cam5_files= [f for f in cam5_files if "CAM5" in f]
-    #image =[]
-    #read in data
-    # for each_image in cam5_files:
-    #     image.extend(get_tmq(each_image))
-    # image = np.asarray(image).astype('float32')
     
     #Temp_load_image load 1 image with the format (1,height, width) 
     image = temp_load_image("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2012-10-25-00000.nc")
@@ -197,19 +234,19 @@ def train():
     iw = np.array(1152,dtype='float32')
     gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_boxes.npy").astype('float32')
     gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_masks.npy").astype('float32')
-    
-
 
     img_id = np.array(2012102500,dtype='float32')
-    num_instances = np.array([gt_boxes.shape[0],gt_boxes.shape[0]], dtype='float32')
-    #image = get_tmq(cam5_files)
+    num_instances = np.array([gt_boxes.shape[0]], dtype='float32')
     
+    tfrecords_filename = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/records/*")
+    image, ih, iw, gt_boxes, gt_masks, num_instances, img_id = \
+        read(tfrecords_filename)
 
     print(image.shape)
     print(gt_boxes.shape)
     print(gt_masks.shape)
 
-    data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=16,
+    data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=0,
             dtypes=(
                 image.dtype, ih.dtype, iw.dtype, 
                 gt_boxes.dtype, gt_masks.dtype, 
@@ -221,6 +258,7 @@ def train():
     (image, ih, iw, gt_boxes, gt_masks, num_instances, img_id) =  data_queue.dequeue()
     im_shape = tf.shape(image)
     #image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
+    import IPython; IPython.embed()
     image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
 
     ## network
