@@ -5,10 +5,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
 import numpy as np
 import argparse
-from skimage import segmentation
-from skimage.future import graph
-from skimage.filters import threshold_otsu, threshold_local, rank
-from skimage.morphology import disk
+#from skimage import segmentation
+#from skimage.future import graph
+from skimage.filters import threshold_otsu
 import netCDF4 as nc
 from os import listdir
 from os.path import isfile, join
@@ -20,6 +19,13 @@ from skimage.transform import resize
 
 
 import floodfillsearch.cFloodFillSearch as flood
+
+from mpi4py import MPI
+
+
+#UNCOMMENT THE FOLLOWING 2 LINES IF YOU WANT TO RUN IN PARALLEL
+#rank = MPI.COMM_WORLD.Get_rank()
+#size = MPI.COMM_WORLD.Get_size()
 
 scale_down = 8
 image_height = 768 / scale_down
@@ -154,8 +160,16 @@ teca_subtables = [f for f in listdir(path_to_subtables) if isfile(join(path_to_s
 path_to_labels = "/global/cscratch1/sd/amahesh/segmentation_labels/"
 path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
 
+progress_counter = 0
+print(str(len(teca_subtables))+"LENTECASUBTABLES")
 
-for table_name in teca_subtables:
+for i,table_name in enumerate(teca_subtables):
+	
+	#UNCOMMENT THE FOLLOWING LINE IF YOU WANT TO RUN IN PARALLEL
+	if i % size != rank: continue
+	
+	progress_counter+=1
+	print(progress_counter)
 	year = int(table_name[12:16])
 	month = int(table_name[17:19])
 	day = int(table_name[20:22])
@@ -172,15 +186,15 @@ for table_name in teca_subtables:
 			lats = fin['lat'][:][::scale_down]
 			lons = fin['lon'][:][::scale_down]
 			U850 = fin.variables['U850'][:][time_step_index]
-	    	V850 = fin.variables['V850'][:][time_step_index]
-	    	QREFHT = fin.variables['QREFHT'][:][time_step_index]
-	    	TMQ = resize(TMQ, (image_height, image_width),preserve_range=True)
-	    	U850 = resize(U850, (image_height, image_width),preserve_range=True)
-	    	V850 = resize(V850, (image_height, image_width),preserve_range=True)
-	    	QREFHT = resize(QREFHT, (image_height, image_width),preserve_range=True)
-	    	U850 = np.expand_dims(U850, axis=0)
-	    	V850 = np.expand_dims(V850, axis=0)
-	    	QREFHT = np.expand_dims(QREFHT, axis=0)
+			V850 = fin.variables['V850'][:][time_step_index]
+			QREFHT = fin.variables['QREFHT'][:][time_step_index]
+			TMQ = resize(TMQ, (image_height, image_width),preserve_range=True)
+			U850 = resize(U850, (image_height, image_width),preserve_range=True)
+			V850 = resize(V850, (image_height, image_width),preserve_range=True)
+			QREFHT = resize(QREFHT, (image_height, image_width),preserve_range=True)
+			U850 = np.expand_dims(U850, axis=0)
+			V850 = np.expand_dims(V850, axis=0)
+			QREFHT = np.expand_dims(QREFHT, axis=0)
 
 		
 		#The semantic mask is one mask with 1's where the storms are and 0's everywhere else
@@ -202,7 +216,7 @@ for table_name in teca_subtables:
 
 		#time_step_index*3 yields 0,3,6,9,12,15,18,or21
 		curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
-		if len(curr_table_time) >= 2:
+		if len(curr_table_time) >= 3:
 			num_instances += len(curr_table_time)
 			#ignore num_instances it is a stupid variable
 			if len(curr_table_time > 0):
@@ -225,7 +239,7 @@ for table_name in teca_subtables:
 						#The ground trouth boxes are in the form x1, y1, x2, y2, class_id
 						
 						instance_boxes.append(np.asarray([lat_start_index, lon_start_index, lat_end_index, lon_end_index, 1]))
-						print(instance_boxes)
+						#print(instance_boxes)
 				
 
 			
@@ -234,16 +248,16 @@ for table_name in teca_subtables:
 					#Plot sample semantic mask
 					#plot_mask(lons, lats, TMQ, semantic_mask, row['lon'], row['lat'], year, month, day, time_step_index)
 					if np.any(np.asarray(intersects)):
-						np.save(path_to_labels+"images/INTERSECT_{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), TMQ[:,:,np.newaxis])
-						np.save(path_to_labels+"semantic_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+						np.save(path_to_labels+"images/INTERSECT_{:04d}{:02d}{:02d}{:02d}_image.npy".format(year,month,day,time_step_index), TMQ[:,:,np.newaxis])
+						np.save(path_to_labels+"semantic_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}_semantic_mask.npy".format(year,month,day,time_step_index), semantic_mask)
 						#with open(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}-{:02d}-{:02d}-{:02d}.pkl".format(year,month,day,time_step_index),'w') as f:
 						#	pickle.dump(instance_labels,f)
 						#instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
 						np.save(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}_instance_boxes.npy".format(year,month,day,time_step_index), np.asarray(instance_boxes))
 						np.save(path_to_labels+"instance_combined_labels/INTERSECT_{:04d}{:02d}{:02d}{:02d}_instance_masks.npy".format(year,month,day,time_step_index), np.asarray(instance_masks))
 					else:
-						np.save(path_to_labels+"images/{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), TMQ[:,:,np.newaxis])
-						np.save(path_to_labels+"semantic_combined_labels/{:04d}{:02d}{:02d}{:02d}.npy".format(year,month,day,time_step_index), semantic_mask)
+						np.save(path_to_labels+"images/{:04d}{:02d}{:02d}{:02d}_image.npy".format(year,month,day,time_step_index), TMQ[:,:,np.newaxis])
+						np.save(path_to_labels+"semantic_combined_labels/{:04d}{:02d}{:02d}{:02d}_semantic_mask.npy".format(year,month,day,time_step_index), semantic_mask)
 						#instance_labels = [num_instances,np.asarray(instance_boxes), np.asarray(instance_masks)]
 						np.save(path_to_labels+"instance_combined_labels/{:04d}{:02d}{:02d}{:02d}_instance_boxes.npy".format(year,month,day,time_step_index), np.asarray(instance_boxes))
 						np.save(path_to_labels+"instance_combined_labels/{:04d}{:02d}{:02d}{:02d}_instance_masks.npy".format(year,month,day,time_step_index), np.asarray(instance_masks))
