@@ -65,12 +65,12 @@ def _convert_to_tfexample(image_id, image_data,
   """ just write a raw input"""
   return tf.train.Example(features=tf.train.Features(feature={
     'image/img_id': _int64_feature(image_id),
-    'image/encoded': _bytes_feature(tf.compat.as_bytes((image_data*1000).astype('uint8').tostring())),
+    'image/encoded': _bytes_feature(tf.compat.as_bytes(image_data.tostring())),
     'image/height': _int64_feature(height),
     'image/width': _int64_feature(width),
     'label/num_instances': _int64_feature(num_instances),  # N
-    'label/gt_boxes': _bytes_feature(tf.compat.as_bytes(gt_boxes.astype('float32').tostring())),  # of shape (N, 5), (x1, y1, x2, y2, classid)
-    'label/gt_masks': _bytes_feature(tf.compat.as_bytes(gt_masks.astype('uint8').tostring()))  # of shape (N, height, width)
+    'label/gt_boxes': _bytes_feature(tf.compat.as_bytes(gt_boxes.tostring())),  # of shape (N, 5), (x1, y1, x2, y2, classid)
+    'label/gt_masks': _bytes_feature(tf.compat.as_bytes(gt_masks.tostring()))  # of shape (N, height, width)
     #'label/encoded': _bytes_feature(label_data),  # deprecated, this is used for pixel-level segmentation
   }))
 
@@ -95,21 +95,25 @@ for shard_id in range(1,num_shards+1):
       data_filename = filenames[(shard_id-1) * num_images_per_shard + i]
       id_start_index = min([i for i, c in enumerate(data_filename) if c.isdigit()])
       img_id_string = data_filename[id_start_index:id_start_index+10]
-      img_id = int(img_id_string)
+      #img_id = int(img_id_string)
 
-      year, month, day, time_step = _process_img_id_string(img_id_string)
+      img_id = 5555
 
-      img = load_image(dataset_dir, year, month, day, time_step)
+      #year, month, day, time_step = _process_img_id_string(img_id_string)
 
-      height = 768
-      width = 1152
+      img = np.zeros((100,100))
 
-      gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/{:10d}_instance_boxes.npy".format(img_id)).astype('float32')
-      gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/{:10d}_instance_masks.npy".format(img_id)).astype('float32')
-    
+      height = 100
+      width = 100
+
+      #gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/{:10d}_instance_boxes.npy".format(img_id)).astype('float32')
+      #gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/{:10d}_instance_masks.npy".format(img_id)).astype('float32')
+      
+      gt_boxes = np.zeros((5,5)).astype("float32")
+      gt_masks = np.zeros((5,100,100))
 
       example = _convert_to_tfexample(img_id, img, height, width, 
         gt_boxes.shape[0], gt_boxes, gt_masks)
       tfrecord_writer.write(example.SerializeToString())
 
-print('\nFinished converting the coco dataset!')
+print('\nFinished converting the zeros dataset!')

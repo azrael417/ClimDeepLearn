@@ -177,7 +177,7 @@ def read(tfrecords_filename):
   if not isinstance(tfrecords_filename, list):
     tfrecords_filename = [tfrecords_filename]
   filename_queue = tf.train.string_input_producer(
-    tfrecords_filename, num_epochs=1)
+    tfrecords_filename, num_epochs=100)
 
   options = tf.python_io.TFRecordOptions(TFRecordCompressionType.ZLIB)
   reader = tf.TFRecordReader(options=options)
@@ -199,9 +199,10 @@ def read(tfrecords_filename):
   ih = tf.cast(features['image/height'], tf.int32)
   iw = tf.cast(features['image/width'], tf.int32)
   num_instances = tf.cast(features['label/num_instances'], tf.int32)
-  image = tf.decode_raw(features['image/encoded'], tf.float32)
+  image = tf.decode_raw(features['image/encoded'], tf.uint8)
   imsize = tf.size(image)
   image = tf.reshape(image, (ih, iw, 1))
+  image = tf.cast(image,tf.float32)
   #image = tf.cond(tf.equal(imsize, ih * iw), \
   #        lambda: tf.image.grayscale_to_rgb(tf.reshape(image, (ih, iw, 1))), \
   #        lambda: tf.reshape(image, (ih, iw, 3)))
@@ -209,7 +210,7 @@ def read(tfrecords_filename):
   gt_boxes = tf.decode_raw(features['label/gt_boxes'], tf.float32)
   gt_boxes = tf.reshape(gt_boxes, [num_instances, 5])
   gt_masks = tf.decode_raw(features['label/gt_masks'], tf.uint8)
-  gt_masks = tf.cast(gt_masks, tf.int32)
+  #gt_masks = tf.cast(gt_masks, tf.int32)
   gt_masks = tf.reshape(gt_masks, [num_instances, ih, iw])
   
   return image, ih, iw, gt_boxes, gt_masks, num_instances, img_id
@@ -225,20 +226,22 @@ def train():
     #                          FLAGS.im_batch,
     #                          is_training=True)
     
-    cam5_files = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.*")
+    #cam5_files = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.*")
     
     #Temp_load_image load 1 image with the format (1,height, width) 
-    image = temp_load_image("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2012-10-25-00000.nc")
+    #image = temp_load_image("/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2012-10-25-00000.nc")
 
-    ih = np.array(768,dtype='float32')
-    iw = np.array(1152,dtype='float32')
-    gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_boxes.npy").astype('float32')
-    gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_masks.npy").astype('float32')
+    # ih = np.array(768,dtype='float32')
+    # iw = np.array(1152,dtype='float32')
+    # gt_boxes = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_boxes.npy").astype('float32')
+    # gt_masks = np.load("/home/mudigonda/files_for_first_maskrcnn_test/2012102500_instance_masks.npy").astype('float32')
 
-    img_id = np.array(2012102500,dtype='float32')
-    num_instances = np.array([gt_boxes.shape[0]], dtype='float32')
+    # img_id = np.array(2012102500,dtype='float32')
+    # num_instances = np.array([gt_boxes.shape[0]], dtype='float32')
     
     tfrecords_filename = glob.glob("/home/mudigonda/files_for_first_maskrcnn_test/records/*")
+    print(tfrecords_filename)
+    #tfrecords_filename = "p"
     image, ih, iw, gt_boxes, gt_masks, num_instances, img_id = \
         read(tfrecords_filename)
 
@@ -246,7 +249,7 @@ def train():
     print(gt_boxes.shape)
     print(gt_masks.shape)
 
-    data_queue = tf.RandomShuffleQueue(capacity=32, min_after_dequeue=1,
+    data_queue = tf.RandomShuffleQueue(capacity=5, min_after_dequeue=2,
             dtypes=(
                 image.dtype, ih.dtype, iw.dtype, 
                 gt_boxes.dtype, gt_masks.dtype, 
@@ -255,10 +258,11 @@ def train():
     enqueue_op = data_queue.enqueue((image, ih, iw, gt_boxes, gt_masks, num_instances, img_id))
     data_queue_runner = tf.train.QueueRunner(data_queue, [enqueue_op] * 4)
     tf.add_to_collection(tf.GraphKeys.QUEUE_RUNNERS, data_queue_runner)
+
     (image, ih, iw, gt_boxes, gt_masks, num_instances, img_id) =  data_queue.dequeue()
+    tf.Print(image,[image])
     im_shape = tf.shape(image)
     #image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
-    import IPython; IPython.embed()
     image = tf.reshape(image, (im_shape[0], im_shape[1], im_shape[2], 1))
 
     ## network
@@ -271,6 +275,7 @@ def train():
             gt_boxes=gt_boxes, gt_masks=gt_masks,
             loss_weights=[0.2, 0.2, 1.0, 0.2, 1.0])
 
+    import IPython; IPython.embed()
     print('Pyramid_network successfully built')
     total_loss = outputs['total_loss']
     losses  = outputs['losses']
@@ -340,6 +345,7 @@ def train():
         start_time = time.time()
 
         print("B4 sess.run in main train loop")
+        IPython.embed()
         s_, tot_loss, reg_lossnp, img_id_str, \
         rpn_box_loss, rpn_cls_loss, refined_box_loss, refined_cls_loss, mask_loss, \
         gt_boxesnp, \
