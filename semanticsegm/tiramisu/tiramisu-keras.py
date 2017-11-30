@@ -7,7 +7,7 @@ from utils2 import *
 import glob
 import warnings
 from skimage.transform import resize
-
+import time
 import matplotlib.pyplot as plt
 
 #from mpl_toolkits.basemap import Basemap
@@ -20,9 +20,19 @@ import pandas as pd
 import pickle
 from sklearn.utils import class_weight
 
-scale_down = 8
-image_height = 768 / scale_down
-image_width = 1152 / scale_down
+#scale_down = 8
+#image_height = 768 / scale_down
+#image_width = 1152 / scale_down
+
+image_height = 96 
+image_width = 144
+
+def get_image_filename_from_mask_filename(mask_filename):
+    #get just the filename of the mask.
+
+    fname = os.path.basename(mask_filename)
+    fname = fname.split("_semantic")[0]
+    return fname+"_image.npy"
 
 def downsize_labels(lbl_array, image_height, image_width):
     temp_1 = np.copy(lbl_array)
@@ -50,7 +60,7 @@ def plot_mask(lons, lats, img_array, storm_mask):
     plt.contourf(xx,yy,img_array,64,cmap='viridis')
     #my_map.plot(x_plot, y_plot, 'r*', color = "red")
     #cbar = my_map.colorbar()
-    plt.contourf(xx,yy,storm_mask, alpha=0.42,cmap='gray')
+    #plt.contourf(xx,yy,storm_mask, alpha=0.42,cmap='gray')
     plt.title("TMQ with Segmented TECA Storms")
     #cbar.ax.set_ylabel('TMQ kg $m^{-2}$')
 
@@ -59,8 +69,9 @@ def plot_mask(lons, lats, img_array, storm_mask):
     plt.clf()
 
 
-def load_lat_lon_TMQ(filepath, year, month, day, time_step):
-    filepath += "CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2." +"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day)
+def load_lat_lon():
+    #sample filepath
+    filepath = "/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2013-01-11-00000.nc"
     print(filepath)
     with nc.Dataset(filepath) as fin:
         TMQ = fin['TMQ'][:][time_step]
@@ -68,6 +79,7 @@ def load_lat_lon_TMQ(filepath, year, month, day, time_step):
         lats = fin['lat'][:]
         print(TMQ.shape)
     return lons[::scale_down], lats[::scale_down], (TMQ * 1000).astype('uint32')
+
 
 def _process_img_id_string(img_id_string):
   year = int(img_id_string[:4])
@@ -78,36 +90,38 @@ def _process_img_id_string(img_id_string):
 
 warnings.filterwarnings("ignore",category=DeprecationWarning)
 
-frames_path = '/home/mudigonda/Data/tiramisu_images/'
+#frames_path = '/home/mudigonda/Data/tiramisu_images/'
+#frames_path = '/home/mudigonda/Data/tiramisu_clipped_images/*'
 
-labels_path = '/home/mudigonda/Data/tiramisu_labels/[0-9]*'
+#labels_path = '/home/mudigonda/Data/tiramisu_labels/[0-9]*'
+#labels_path = '/home/mudigonda/Data/tiramisu_clipped_labels/*'
 
-fnames = glob.glob(frames_path+"*")
-lnames = glob.glob(labels_path+"*")
+# fnames = glob.glob(frames_path+"*")
+# mask_filenames = glob.glob(labels_path+"*")
 
-imgs = np.stack([np.load(fn) for fn in fnames])
-print(imgs.dtype)
-imgs = np.asarray([resize(img, (image_height, image_width))for img in imgs]).astype('uint32')
+# #imgs = np.stack([np.load(fn) for fn in large_percent_image_filenames])
+# print(imgs.dtype)
 
-# Add two dimensions of 0 to the image to make it a 3 channel
-# z=np.zeros((imgs.shape[0],image_height,image_width,2))
-# imgs = np.append(imgs,z,axis=3)
-# #imgs = np.append(imgs,z,axis=3)
+# #Uncomment if you want to scale down images
+# #imgs = np.asarray([resize(img, (image_height, image_width),preserve_range=True)for img in imgs]).astype('uint32')
 
-labels = np.stack([np.load(fn) for fn in lnames]).astype('uint8')
-#labels = np.asarray([downsize_labels(lbl, image_height, image_width)for lbl in labels])
-labels = labels[:,::scale_down,::scale_down]
-print((imgs.shape,labels.shape))
+# #labels = np.stack([np.load(fn) for fn in lnames]).astype('uint8')
+# #labels = np.asarray([downsize_labels(lbl, image_height, image_width)for lbl in labels])
+# #labels = np.stack([np.load(fn) for fn in large_percent_mask_filenames])
+
+# #Uncomment if you want to scale down labels
+# #labels = labels[:,::scale_down,::scale_down]
+# print((imgs.shape,labels.shape))
 
 
-TMQ = imgs[len(imgs)-1]
-label = labels[len(labels) - 1]
-id_start_index = min([i for i, c in enumerate(fnames[len(fnames) - 5]) if c.isdigit()])
-img_id = fnames[len(fnames) - 5][id_start_index:]
-print(img_id)
-year, month, day, time_step = _process_img_id_string(img_id)
-lons, lats, _ = load_lat_lon_TMQ("/home/mudigonda/files_for_first_maskrcnn_test/", year, month, day, time_step)
-plot_mask(lons, lats, TMQ.squeeze(), label)
+# TMQ = imgs[len(imgs)-1]
+# label = labels[len(labels) - 1]
+# id_start_index = min([i for i, c in enumerate(fnames[len(fnames) - 5]) if c.isdigit()])
+# img_id = fnames[len(fnames) - 5][id_start_index:]
+# print(img_id)
+# year, month, day, time_step = _process_img_id_string(img_id)
+# tim
+# plot_mask(lons, lats, TMQ.squeeze(), label)
 
 def relu(x): return Activation('relu')(x)
 def dropout(x, p): return Dropout(p)(x) if p else x
@@ -196,7 +210,7 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    x = conv(img_input, nb_filter, 3, wd, 0)
+    x = conv(img_input, nb_filter, sz=3, wd=wd, p=0)
     skips,added = down_path(x, nb_layers, growth_rate, p, wd)
     x = up_path(added, reverse(skips[:-1]), reverse(nb_layers[:-1]), growth_rate, p, wd)
     
@@ -205,73 +219,44 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     x = Reshape((-1, nb_classes))(x)
     return Activation('softmax')(x)
 
+imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/images.npy")
+imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
+labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/masks.npy")
+
+#Image metadata contains year, month, day, time_step, and lat/ lon data for each crop
+image_metadata = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/image_metadata.npy")
+
+imgs = imgs[:,3:-3,...]
+labels = labels[:,3:-3,:]
+
+#PERMUTATION OF DATA
+np.random.seed(12345)
+shuffle_indices = np.random.permutation(len(imgs)) 
+np.save("./shuffle_indices.npy", shuffle_indices)
+imgs = imgs[shuffle_indices]
+labels = labels[shuffle_indices]
+image_metadata = image_metadata[shuffle_indices]
 
 trn = imgs[:int(0.8*len(imgs))]
 trn_labels = labels[:int(0.8 * len(labels))]
-test = imgs[int(0.8*len(imgs)):]
-test_labels = labels[int(0.8*len(imgs)):]
+test = imgs[int(0.8*len(imgs)):int(0.9*len(imgs))]
+test_labels = labels[int(0.8*len(imgs)):int(0.9*len(imgs))]
+valid = imgs[int(0.9*len(imgs)):]
+valid_labels = labels[int(0.9*len(imgs)):]
 
 rnd_trn = len(trn_labels)
 rnd_test = len(test_labels)
-
-class BatchIndices(object):
-    def __init__(self, n, bs, shuffle=False):
-        self.n,self.bs,self.shuffle = n,bs,shuffle
-        self.lock = threading.Lock()
-        self.reset()
-
-    def reset(self):
-        self.idxs = (np.random.permutation(self.n) 
-                     if self.shuffle else np.arange(0, self.n))
-        self.curr = 0
-
-    def __next__(self):
-        with self.lock:
-            if self.curr >= self.n: self.reset()
-            ni = min(self.bs, self.n-self.curr)
-            res = self.idxs[self.curr:self.curr+ni]
-            self.curr += ni
-            return res
-
-class segm_generator(object):
-    def __init__(self, x, y, bs=64, out_sz=(768,1152), train=True):
-        self.x, self.y, self.bs, self.train = x,y,bs,train
-        self.n, self.ri, self.ci, _ = x.shape
-        self.idx_gen = BatchIndices(self.n, bs, train)
-        self.ro, self.co = out_sz
-        self.ych = self.y.shape[-1] if len(y.shape)==4 else 1
-
-    def get_slice(self, i,o):
-        start = random.randint(0, i-o) if self.train else (i-o)
-        return slice(start, start+o)
-
-    def get_item(self, idx):
-        slice_r = self.get_slice(self.ri, self.ro)
-        slice_c = self.get_slice(self.ci, self.co)
-        x = self.x[idx, slice_r, slice_c]
-        y = self.y[idx, slice_r, slice_c]
-        if self.train and (random.random()>0.5): 
-            y = y[:,::-1]
-            x = x[:,::-1]
-        return x, y
-
-    def __next__(self):
-        idxs = next(self.idx_gen)
-        items = (self.get_item(idx) for idx in idxs)
-        xs,ys = zip(*items)
-        return np.stack(xs), np.stack(ys).reshape(len(ys), -1, self.ych)
 
 
 # ## Train
 
 #limit_mem()
-input_shape = (image_height,image_width,1)
+input_shape = (imgs.shape[1],imgs.shape[2],1)
 
 img_input = Input(shape=input_shape)
-
 #x = create_tiramisu(3, img_input, nb_layers_per_block=[4,5,7,10,12,15], p=0.2, wd=1e-4)
-x = create_tiramisu(3, img_input, nb_layers_per_block=[4,5,7], p=0.2, wd=1e-4)
-
+blocks=[3,3,4,7,10]
+x = create_tiramisu(3, img_input,nb_layers_per_block=blocks, p=0.2, wd=1e-4)
 model = Model(img_input, x)
 
 class_weight = class_weight.compute_class_weight('balanced', np.unique(trn_labels), trn_labels.flatten())
@@ -283,15 +268,18 @@ trn_labels_flat = trn_labels.reshape((trn_labels.shape[0],image_height*image_wid
 sample_weights[np.where(trn_labels_flat == 0)] = class_weight[0]
 sample_weights[np.where(trn_labels_flat == 1)] = class_weight[1]
 sample_weights[np.where(trn_labels_flat == 2)] = class_weight[2]
-import IPython; IPython.embed()
 
 
-gen = segm_generator(trn, trn_labels, 3, train=True)
+#gen = segm_generator(trn, trn_labels, 3, train=True)
 
-gen_test = segm_generator(test, test_labels, 3, train=False)
+#gen_test = segm_generator(test, test_labels, 3, train=False)
+
+# model.compile(loss='sparse_categorical_crossentropy', 
+#               optimizer=keras.optimizers.RMSprop(1e-3), metrics=["accuracy"], sample_weight = sample_weights,sample_weight_mode = "temporal")
+cp_callback = keras.callbacks.ModelCheckpoint("./training_round3/weights-{epoch:02d}-{val_loss:.2f}-" + str(len(blocks)) +"-" + str(time.time())[-7:-3] + "-.hdf5", monitor='val_loss', verbose=2, save_best_only=False, save_weights_only=False, mode='auto', period=1)
 
 model.compile(loss='sparse_categorical_crossentropy', 
-              optimizer=keras.optimizers.RMSprop(1e-3), metrics=["accuracy"], sample_weight = sample_weights,sample_weight_mode = "temporal")
+               optimizer=keras.optimizers.RMSprop(1e-3), metrics=["accuracy"])
 
 model.optimizer=keras.optimizers.RMSprop(1e-3, decay=1-0.99995)
 
@@ -300,12 +288,14 @@ model.optimizer=keras.optimizers.RMSprop(1e-3)
 
 K.set_value(model.optimizer.lr, 1e-3)
 
+#import IPython; IPython.embed()
 
 model.fit(trn, trn_labels.squeeze().reshape(trn.shape[0],image_height*image_width,1), 
-    nb_epoch=10,shuffle=True, verbose=2, validation_data=(test, test_labels.squeeze().reshape(test.shape[0],image_height*image_width,1)))
+    nb_epoch=300,shuffle=True, verbose=2, validation_data=(valid, valid_labels.squeeze().reshape(valid.shape[0],image_height*image_width,1)),
+    callbacks=[cp_callback])
 
 
-
+#Here we should be testing on the test set to get loss
 pred = model.predict(imgs[len(imgs)-1:len(imgs)])
 p = np.argmax(pred[0],-1).reshape(image_height,image_width)
 import IPython; IPython.embed()
