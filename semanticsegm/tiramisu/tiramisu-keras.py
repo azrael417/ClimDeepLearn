@@ -219,12 +219,12 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     x = Reshape((-1, nb_classes))(x)
     return Activation('softmax')(x)
 
-imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/images.npy")
+imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/images.npy")
 imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/masks.npy")
+labels = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/masks.npy")
 
 #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop
-image_metadata = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/image_metadata.npy")
+image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/image_metadata.npy")
 
 imgs = imgs[:,3:-3,...]
 labels = labels[:,3:-3,:]
