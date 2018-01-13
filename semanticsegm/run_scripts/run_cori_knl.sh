@@ -15,5 +15,5 @@ modulebase=$(dirname $(module show tensorflow/intel-head 2>&1 | grep PATH |awk '
 export PYTHONPATH=${modulebase}/lib/python2.7/site-packages:${PYTHONPATH}
 
 #run the training
-#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 272 -u python ../tiramisu/tiramisu-keras-horovod.py
-srun -N 1 -n 1 -c 272 -u python ../tiramisu/tiramisu-keras-horovod.py
+#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 272 -u python -u ../tiramisu/tiramisu-keras-horovod.py
+srun -N 1 -n 1 -c 272 -u python -u ../tiramisu/tiramisu-keras-horovod.py

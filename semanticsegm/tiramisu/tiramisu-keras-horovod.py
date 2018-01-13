@@ -4,20 +4,13 @@
 import tensorflow as tf
 print tf.__path__
 import tensorflow.contrib.keras as tfk
-
 import importlib
-#import utils2; importlib.reload(utils2)
-#from utils2 import *
-#import glob
 import warnings
 from skimage.transform import resize
 import time
-#import matplotlib.pyplot as plt
-
-#from mpl_toolkits.basemap import Basemap
+from PIL import Image
 import numpy as np
 import argparse
-#import h5py as h5
 from os import listdir
 from os.path import isfile, join
 import pandas as pd
@@ -36,6 +29,7 @@ config.gpu_options.visible_device_list = str(hvd.local_rank())
 #image_height = 768 / scale_down
 #image_width = 1152 / scale_down
 
+batch_size = 32
 image_height = 96 
 image_width = 144
 
@@ -103,15 +97,19 @@ def _process_img_id_string(img_id_string):
 warnings.filterwarnings("ignore",category=DeprecationWarning)
 
 
-def relu(x): return Activation('relu')(x)
-def dropout(x, p): return Dropout(p)(x) if p else x
-def bn(x): return BatchNormalization(mode=2, axis=-1)(x)
+def relu(x): return tfk.activations.relu(x)
+def dropout(x, p): return tfk.layers.Dropout(p)(x) if p else x
+def bn(x): return tfk.layers.BatchNormalization(axis=-1)(x)
 def relu_bn(x): return relu(bn(x))
-def concat(xs): return merge(xs, mode='concat', concat_axis=-1)
+def concat(xs): return tf.concat(xs, axis=-1)
 
 def conv(x, nf, sz, wd, p, stride=1): 
-    x = Convolution2D(nf, sz, sz, init='he_uniform', border_mode='same', 
-                      subsample=(stride,stride), W_regularizer=l2(wd))(x)
+    x = tfk.layers.Conv2D(filters=nf, 
+                            kernel_size=(sz, sz), 
+                            kernel_initializer=tfk.initializers.he_uniform(), 
+                            bias_initializer=tfk.initializers.Zeros(), 
+                            padding='same', 
+                            strides=(stride,stride), kernel_regularizer=tfk.regularizers.l2(wd))(x)
     return dropout(x, p)
 
 def conv_relu_bn(x, nf, sz=3, wd=0, p=0, stride=1): 
@@ -150,8 +148,14 @@ def down_path(x, nb_layers, growth_rate, p, wd):
 def transition_up(added, wd=0):
     x = concat(added)
     _,r,c,ch = x.get_shape().as_list()
-    return Deconvolution2D(ch, 3, 3, (None,r*2,c*2,ch), init='he_uniform', 
-               border_mode='same', subsample=(2,2), W_regularizer=l2(wd))(x)
+    return tfk.layers.Convolution2DTranspose(filters=ch, 
+                                            kernel_size=(3, 3), 
+                                            dilation_rate=(r*2,c*2), 
+                                            kernel_initializer=tfk.initializers.he_uniform(), 
+                                            bias_initializer=tfk.initializers.Zeros(),
+                                            padding='same', 
+                                            strides=(2,2), 
+                                            kernel_regularizer=tfk.regularizers.l2(wd))(x)
 #     x = UpSampling2D()(x)
 #     return conv(x, ch, 2, wd, 0)
 
@@ -196,9 +200,10 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     
     x = conv(x, nb_classes, 1, wd, 0)
     _,r,c,f = x.get_shape().as_list()
-    x = Reshape((-1, nb_classes))(x)
-    return Activation('softmax')(x)
+    x = tfk.layers.Reshape((-1, nb_classes))(x)
+    return tfk.activations.softmax(x)
 
+print("Loading data")
 imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy")
 imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
 labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy")
@@ -210,6 +215,7 @@ imgs = imgs[:,3:-3,...]
 labels = labels[:,3:-3,:]
 
 #PERMUTATION OF DATA
+print("Preprocessing data")
 np.random.seed(12345)
 shuffle_indices = np.random.permutation(len(imgs)) 
 np.save("./shuffle_indices.npy", shuffle_indices)
@@ -231,12 +237,13 @@ rnd_test = len(test_labels)
 # ## Train
 
 #limit_mem()
+print("Getting ready for training")
 input_shape = (imgs.shape[1],imgs.shape[2],1)
 
-img_input = Input(shape=input_shape)
+img_input = tfk.layers.Input(shape=input_shape)
 blocks=[3,3,4,7,10]
 x = create_tiramisu(3, img_input,nb_layers_per_block=blocks, p=0.2, wd=1e-4)
-model = Model(img_input, x)
+model = tfk.models.Model(img_input, x)
 
 class_weight = class_weight.compute_class_weight('balanced', np.unique(trn_labels), trn_labels.flatten())
 class_weight = dict(enumerate(class_weight))
@@ -278,12 +285,13 @@ bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
 train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x=trn,
         y=trn_labels.squeeze().reshape(trn.shape[0],image_height*image_width,1),
-        batch_size=16,
+        batch_size=batch_size,
         num_epochs=300,
         shuffle=True)
 
 # Treat the derived Estimator as you would any other Estimator. For example,
 # the following derived Estimator calls the train method:
+print("Training")
 estimator.train(input_fn=train_input_fn, hooks=[bcast_hook])
 
 
