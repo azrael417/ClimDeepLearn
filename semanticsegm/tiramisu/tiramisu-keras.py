@@ -1,29 +1,35 @@
-import matplotlib as mpl
-mpl.use('agg')
+#import matplotlib as mpl
+#mpl.use('agg')
 
+import tensorflow as tf
+print tf.__path__
+import tensorflow.contrib.keras as tfk
 import importlib
-#import utils2; importlib.reload(utils2)
-from utils2 import *
-import glob
 import warnings
 from skimage.transform import resize
 import time
-import matplotlib.pyplot as plt
-
-#from mpl_toolkits.basemap import Basemap
+from PIL import Image
 import numpy as np
 import argparse
-import netCDF4 as nc
 from os import listdir
 from os.path import isfile, join
 import pandas as pd
 import pickle
 from sklearn.utils import class_weight
 
+# Horovod for parallelization
+#import horovod.tensorflow as hvd
+#hvd.init()
+#special config
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+#config.gpu_options.visible_device_list = str(hvd.local_rank())
+
 #scale_down = 8
 #image_height = 768 / scale_down
 #image_width = 1152 / scale_down
 
+batch_size = 32
 image_height = 96 
 image_width = 144
 
@@ -69,16 +75,16 @@ def plot_mask(lons, lats, img_array, storm_mask):
     plt.clf()
 
 
-def load_lat_lon():
-    #sample filepath
-    filepath = "/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2013-01-11-00000.nc"
-    print(filepath)
-    with nc.Dataset(filepath) as fin:
-        TMQ = fin['TMQ'][:][time_step]
-        lons = fin['lon'][:]
-        lats = fin['lat'][:]
-        print(TMQ.shape)
-    return lons[::scale_down], lats[::scale_down], (TMQ * 1000).astype('uint32')
+#def load_lat_lon():
+#    #sample filepath
+#    filepath = "/home/mudigonda/files_for_first_maskrcnn_test/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2.2013-01-11-00000.nc"
+#    print(filepath)
+#    with nc.Dataset(filepath) as fin:
+#        TMQ = fin['TMQ'][:][time_step]
+#        lons = fin['lon'][:]
+#        lats = fin['lat'][:]
+#        print(TMQ.shape)
+#    return lons[::scale_down], lats[::scale_down], (TMQ * 1000).astype('uint32')
 
 
 def _process_img_id_string(img_id_string):
@@ -90,48 +96,21 @@ def _process_img_id_string(img_id_string):
 
 warnings.filterwarnings("ignore",category=DeprecationWarning)
 
-#frames_path = '/home/mudigonda/Data/tiramisu_images/'
-#frames_path = '/home/mudigonda/Data/tiramisu_clipped_images/*'
 
-#labels_path = '/home/mudigonda/Data/tiramisu_labels/[0-9]*'
-#labels_path = '/home/mudigonda/Data/tiramisu_clipped_labels/*'
-
-# fnames = glob.glob(frames_path+"*")
-# mask_filenames = glob.glob(labels_path+"*")
-
-# #imgs = np.stack([np.load(fn) for fn in large_percent_image_filenames])
-# print(imgs.dtype)
-
-# #Uncomment if you want to scale down images
-# #imgs = np.asarray([resize(img, (image_height, image_width),preserve_range=True)for img in imgs]).astype('uint32')
-
-# #labels = np.stack([np.load(fn) for fn in lnames]).astype('uint8')
-# #labels = np.asarray([downsize_labels(lbl, image_height, image_width)for lbl in labels])
-# #labels = np.stack([np.load(fn) for fn in large_percent_mask_filenames])
-
-# #Uncomment if you want to scale down labels
-# #labels = labels[:,::scale_down,::scale_down]
-# print((imgs.shape,labels.shape))
-
-
-# TMQ = imgs[len(imgs)-1]
-# label = labels[len(labels) - 1]
-# id_start_index = min([i for i, c in enumerate(fnames[len(fnames) - 5]) if c.isdigit()])
-# img_id = fnames[len(fnames) - 5][id_start_index:]
-# print(img_id)
-# year, month, day, time_step = _process_img_id_string(img_id)
-# tim
-# plot_mask(lons, lats, TMQ.squeeze(), label)
-
-def relu(x): return Activation('relu')(x)
-def dropout(x, p): return Dropout(p)(x) if p else x
-def bn(x): return BatchNormalization(mode=2, axis=-1)(x)
+def relu(x): return tfk.activations.relu(x)
+def dropout(x, p): return tfk.layers.Dropout(p)(x) if p else x
+def bn(x): return tfk.layers.BatchNormalization(axis=-1)(x)
 def relu_bn(x): return relu(bn(x))
-def concat(xs): return merge(xs, mode='concat', concat_axis=-1)
+#def concat(xs): return tf.concat(xs, axis=-1)
+def concat(xs): return tfk.layers.concatenate(xs, axis=-1)
 
 def conv(x, nf, sz, wd, p, stride=1): 
-    x = Convolution2D(nf, sz, sz, init='he_uniform', border_mode='same', 
-                      subsample=(stride,stride), W_regularizer=l2(wd))(x)
+    x = tfk.layers.Conv2D(filters=nf, 
+                            kernel_size=(sz, sz), 
+                            kernel_initializer=tfk.initializers.he_uniform(), 
+                            bias_initializer=tfk.initializers.Zeros(), 
+                            padding='same', 
+                            strides=(stride,stride), kernel_regularizer=tfk.regularizers.l2(wd))(x)
     return dropout(x, p)
 
 def conv_relu_bn(x, nf, sz=3, wd=0, p=0, stride=1): 
@@ -170,8 +149,14 @@ def down_path(x, nb_layers, growth_rate, p, wd):
 def transition_up(added, wd=0):
     x = concat(added)
     _,r,c,ch = x.get_shape().as_list()
-    return Deconvolution2D(ch, 3, 3, (None,r*2,c*2,ch), init='he_uniform', 
-               border_mode='same', subsample=(2,2), W_regularizer=l2(wd))(x)
+    return tfk.layers.Convolution2DTranspose(filters=ch, 
+                                            kernel_size=(3, 3), 
+                                            dilation_rate=(r*2,c*2), 
+                                            kernel_initializer=tfk.initializers.he_uniform(), 
+                                            bias_initializer=tfk.initializers.Zeros(),
+                                            padding='same', 
+                                            strides=(2,2), 
+                                            kernel_regularizer=tfk.regularizers.l2(wd))(x)
 #     x = UpSampling2D()(x)
 #     return conv(x, ch, 2, wd, 0)
 
@@ -216,20 +201,23 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     
     x = conv(x, nb_classes, 1, wd, 0)
     _,r,c,f = x.get_shape().as_list()
-    x = Reshape((-1, nb_classes))(x)
-    return Activation('softmax')(x)
+    #x = tfk.layers.Reshape((-1, nb_classes))(x)
+    x = tfk.layers.Reshape((r*c, nb_classes))(x)
+    return tfk.activations.softmax(x)
 
-imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/images.npy")
+print("Loading data")
+imgs = np.load("/global/homes/m/mayur/Data/images.npy")
 imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-labels = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/masks.npy")
+labels = np.load("/global/homes/m/mayur/Data/masks.npy")
 
 #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop
-image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/climate/tiramisu_clipped_combined_v2/image_metadata.npy")
+image_metadata = np.load("/global/homes/m/mayur/Data/image_metadata.npy")
 
 imgs = imgs[:,3:-3,...]
 labels = labels[:,3:-3,:]
 
 #PERMUTATION OF DATA
+print("Preprocessing data")
 np.random.seed(12345)
 shuffle_indices = np.random.permutation(len(imgs)) 
 np.save("./shuffle_indices.npy", shuffle_indices)
@@ -251,107 +239,79 @@ rnd_test = len(test_labels)
 # ## Train
 
 #limit_mem()
+print("Getting ready for training")
 input_shape = (imgs.shape[1],imgs.shape[2],1)
 
-img_input = Input(shape=input_shape)
-#x = create_tiramisu(3, img_input, nb_layers_per_block=[4,5,7,10,12,15], p=0.2, wd=1e-4)
+img_input = tfk.layers.Input(shape=input_shape)
+#img_input = Input(shape=input_shape)
 blocks=[3,3,4,7,10]
 x = create_tiramisu(3, img_input,nb_layers_per_block=blocks, p=0.2, wd=1e-4)
-model = Model(img_input, x)
+import IPython; IPython.embed()
+model = tfk.models.Model(img_input, x)
 
-class_weight = class_weight.compute_class_weight('balanced', np.unique(trn_labels), trn_labels.flatten())
-#import IPython; IPython.embed()
-class_weight = dict(enumerate(class_weight))
-
-sample_weights = np.zeros((trn_labels.shape[0], image_height*image_width))
-trn_labels_flat = trn_labels.reshape((trn_labels.shape[0],image_height*image_width))
-sample_weights[np.where(trn_labels_flat == 0)] = class_weight[0]
-sample_weights[np.where(trn_labels_flat == 1)] = class_weight[1]
-sample_weights[np.where(trn_labels_flat == 2)] = class_weight[2]
+#class_weight = class_weight.compute_class_weight('balanced', np.unique(trn_labels), trn_labels.flatten())
+#class_weight = dict(enumerate(class_weight))
+#
+#sample_weights = np.zeros((trn_labels.shape[0], image_height*image_width))
+#trn_labels_flat = trn_labels.reshape((trn_labels.shape[0],image_height*image_width))
+#sample_weights[np.where(trn_labels_flat == 0)] = class_weight[0]
+#sample_weights[np.where(trn_labels_flat == 1)] = class_weight[1]
+#sample_weights[np.where(trn_labels_flat == 2)] = class_weight[2]
 
 
 #gen = segm_generator(trn, trn_labels, 3, train=True)
 
 #gen_test = segm_generator(test, test_labels, 3, train=False)
 
-# model.compile(loss='sparse_categorical_crossentropy', 
-#               optimizer=keras.optimizers.RMSprop(1e-3), metrics=["accuracy"], sample_weight = sample_weights,sample_weight_mode = "temporal")
-cp_callback = keras.callbacks.ModelCheckpoint("./training_round3/weights-{epoch:02d}-{val_loss:.2f}-" + str(len(blocks)) +"-" + str(time.time())[-7:-3] + "-.hdf5", monitor='val_loss', verbose=2, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+cp_callback = tfk.callbacks.ModelCheckpoint("./training_round3/weights-{epoch:02d}-{val_loss:.2f}-" + str(len(blocks)) +"-" + str(time.time())[-7:-3] + "-.hdf5", monitor='val_loss', verbose=2, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+
+#model.optimizer=tfk.optimizers.RMSprop(1e-3, decay=1-0.99995)
+#model.optimizer=tf.train.RMSPropOptimizer(learning_rate=1e-3, decay=1-0.99995)
+
+# Horovod: add Horovod Distributed Optimizer.
+#model.optimizer = hvd.DistributedOptimizer(model.optimizer)
 
 model.compile(loss='sparse_categorical_crossentropy', 
-               optimizer=keras.optimizers.RMSprop(1e-3), metrics=["accuracy"])
+               optimizer=tfk.optimizers.RMSprop(1e-3), metrics=["accuracy"])
 
-model.optimizer=keras.optimizers.RMSprop(1e-3, decay=1-0.99995)
+#create estimator
+estimator = tfk.estimator.model_to_estimator(keras_model=model,
+                                            model_dir="./models_small/",
+                                            config=tf.estimator.RunConfig(session_config=config))
 
-model.optimizer=keras.optimizers.RMSprop(1e-3)
+# Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states from
+# rank 0 to all other processes. This is necessary to ensure consistent
+# initialization of all workers when training is started with random weights or
+# restored from a checkpoint.
+#bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
 
+# Train the model
+train_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x=trn,
+        y=trn_labels.squeeze().reshape(trn.shape[0],image_height*image_width,1),
+        batch_size=batch_size,
+        num_epochs=300,
+        shuffle=True)
 
-K.set_value(model.optimizer.lr, 1e-3)
-
-#import IPython; IPython.embed()
-
-model.fit(trn, trn_labels.squeeze().reshape(trn.shape[0],image_height*image_width,1), 
-    nb_epoch=300,shuffle=True, verbose=2, validation_data=(valid, valid_labels.squeeze().reshape(valid.shape[0],image_height*image_width,1)),
-    callbacks=[cp_callback])
-
-
-#Here we should be testing on the test set to get loss
-pred = model.predict(imgs[len(imgs)-1:len(imgs)])
-p = np.argmax(pred[0],-1).reshape(image_height,image_width)
-import IPython; IPython.embed()
-plot_mask(lons, lats, TMQ.squeeze(), p.squeeze())
-
-
-#model.fit_generator(gen, rnd_trn, 100, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-# model.optimizer=keras.optimizers.RMSprop(3e-4, decay=1-0.9995)
+# Treat the derived Estimator as you would any other Estimator. For example,
+# the following derived Estimator calls the train method:
+print("Training")
+estimator.train(input_fn=train_input_fn, hooks=[bcast_hook])
 
 
-# model.fit_generator(gen, rnd_trn, 500, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-# model.optimizer=keras.optimizers.RMSprop(2e-4, decay=1-0.9995)
-
-
-# model.fit_generator(gen, rnd_trn, 500, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-
-# model.optimizer=keras.optimizers.RMSprop(1e-5, decay=1-0.9995)
+ # Evaluate the model and print results
+eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x=valid,
+        y=valid_labels.squeeze().reshape(valid.shape[0],image_height*image_width,1),
+        num_epochs=1,
+        shuffle=False)
+eval_results = estimator.evaluate(input_fn=eval_input_fn)
 
 
-
-# model.fit_generator(gen, rnd_trn, 500, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-# lrg_sz = (352,480)
-# gen = segm_generator(trn, trn_labels, 2, out_sz=lrg_sz, train=True)
-# gen_test = segm_generator(test, test_labels, 2, out_sz=lrg_sz, train=False)
-
-# lrg_shape = lrg_sz+(3,)
-# lrg_input = Input(shape=lrg_shape)
+##Here we should be testing on the test set to get loss
+#pred = model.predict(imgs[len(imgs)-1:len(imgs)])
+#p = np.argmax(pred[0],-1).reshape(image_height,image_width)
+##import IPython; IPython.embed()
+#plot_mask(lons, lats, TMQ.squeeze(), p.squeeze())
 
 
-# x = create_tiramisu(12, lrg_input, nb_layers_per_block=[4,5,7,10,12,15], p=0.2, wd=1e-4)
-
-
-# lrg_model = Model(lrg_input, x)
-
-
-# lrg_model.compile(loss='sparse_categorical_crossentropy', 
-#               optimizer=keras.optimizers.RMSprop(1e-4), metrics=["accuracy"])
-
-# lrg_model.fit_generator(gen, rnd_trn, 100, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-
-
-# lrg_model.fit_generator(gen, rnd_trn, 100, verbose=2, 
-#                     validation_data=gen_test, nb_val_samples=rnd_test)
-
-# lrg_model.optimizer=keras.optimizers.RMSprop(1e-5)
-
-
-# lrg_model.fit_generator(gen, rnd_trn, 2, verbose=2, 
-#                  
