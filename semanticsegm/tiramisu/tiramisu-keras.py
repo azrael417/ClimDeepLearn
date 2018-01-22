@@ -97,7 +97,8 @@ def _process_img_id_string(img_id_string):
 warnings.filterwarnings("ignore",category=DeprecationWarning)
 
 
-def relu(x): return tfk.activations.relu(x)
+#def relu(x): return tfk.activations.relu(x)
+def relu(x): return tfk.layers.Activation('relu')(x)
 def dropout(x, p): return tfk.layers.Dropout(p)(x) if p else x
 def bn(x): return tfk.layers.BatchNormalization(axis=-1)(x)
 def relu_bn(x): return relu(bn(x))
@@ -203,7 +204,8 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     _,r,c,f = x.get_shape().as_list()
     #x = tfk.layers.Reshape((-1, nb_classes))(x)
     x = tfk.layers.Reshape((r*c, nb_classes))(x)
-    return tfk.activations.softmax(x)
+    #return tfk.activations.softmax(x)
+    return tfk.layers.Activation('softmax')(x)
 
 print("Loading data")
 imgs = np.load("/global/homes/m/mayur/Data/images.npy")
@@ -246,7 +248,6 @@ img_input = tfk.layers.Input(shape=input_shape)
 #img_input = Input(shape=input_shape)
 blocks=[3,3,4,7,10]
 x = create_tiramisu(3, img_input,nb_layers_per_block=blocks, p=0.2, wd=1e-4)
-import IPython; IPython.embed()
 model = tfk.models.Model(img_input, x)
 
 #class_weight = class_weight.compute_class_weight('balanced', np.unique(trn_labels), trn_labels.flatten())
@@ -275,7 +276,8 @@ model.compile(loss='sparse_categorical_crossentropy',
                optimizer=tfk.optimizers.RMSprop(1e-3), metrics=["accuracy"])
 
 #create estimator
-estimator = tfk.estimator.model_to_estimator(keras_model=model,
+#estimator = tfk.estimator.model_to_estimator(keras_model=model,
+estimator = tf.estimator.model_to_estimator(keras_model=model,
                                             model_dir="./models_small/",
                                             config=tf.estimator.RunConfig(session_config=config))
 
