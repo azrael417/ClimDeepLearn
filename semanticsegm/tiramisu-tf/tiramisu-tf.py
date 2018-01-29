@@ -127,31 +127,50 @@ def load_data():
 
 	rnd_trn = len(trn_labels)
 	rnd_test = len(test_labels)	
-
+	
+	#Normalize
+	trn_mean = trn.mean(axis=0)
+	trn_std = trn.std(axis=0)
+	#trn = (trn - trn_mean)/trn_std
+	#valid = (valid - trn_mean)/trn_std
+	#test = (test - trn_mean)/trn_std
 	return trn, trn_labels, valid, valid_labels, test, test_labels
 
 def main():
 
     training_graph = tf.Graph()
     trn, trn_labels, valid, valid_labels, test, test_labels = load_data()
+    batch = 32
+    #trn = np.random.randint(255,size=(10,96,144,1))
+    #trn_labels = np.random.randint(3,size=(10,96,144,1))
+    #trn = (trn - trn.mean(axis=0))/trn.std(axis=0)
+    
 
     with training_graph.as_default():
-        #images = tf.placeholder(tf.float32, [None, 128, 128, 1])
-        #model = create_tiramisu(1, images)
-	#loss = tf.losses.mean_squared_error(labels,model)
 
         with tf.Session() as sess:
             images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
 	    labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
-            model = create_tiramisu(1, images)
-	    import IPython; IPython.embed()
+            model = create_tiramisu(3, images)
 	    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels,logits=model)
 	    train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3).minimize(loss)
 	    tf.global_variables_initializer().run()
-	    for ii in range(1):
-		feed_dict = {images:trn[:10,...],labels:trn_labels[:10,...].reshape(10,image_height*image_width,1)}
-	        _,l = sess.run([train_op,loss])
-		print("Loss is {}".format(l))
+	    indices = np.random.choice(trn.shape[0],batch)
+	    batch_trn = trn[indices, ...].reshape([batch,96,144,1])
+	    #batch_trn_labels = trn_labels[:batch,...].reshape([batch,96,144,1])
+	    batch_trn_labels = trn_labels[indices, ...].reshape([batch,96,144,1])
+	    for ii in range(10):
+		for jj in np.arange(0,trn.shape[0],batch):
+		    try:
+			batch_trn = trn[jj:jj+batch,...]
+			batch_trn_labels = trn_labels[jj:jj+batch,...] 
+		    except:
+			batch_trn = trn[jj:,...]
+			batch_trn_labels = trn_labels[jj:,...] 
+		    feed_dict = {images:batch_trn,labels:batch_trn_labels}
+	            _,l = sess.run([train_op,loss],feed_dict=feed_dict)
+		    print("Loss for epoch {} and iteration {} is {}".format(ii,jj,l))
+	    import IPython; IPython.embed()
             writer = tf.summary.FileWriter('./logs/dev', sess.graph)
 
 if __name__ == '__main__':
