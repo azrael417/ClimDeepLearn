@@ -112,7 +112,7 @@ def load_data():
     labels = labels[:,3:-3,:]
     
     #split by rank:
-    num_samples_per_rank = imgs.shape[0] // hvd.ranks()
+    num_samples_per_rank = imgs.shape[0] // hvd.size()
     start = hvd.rank() * num_samples_per_rank
     end = np.min([(hvd.rank()+1) * num_samples_per_rank, imgs.shape[0]])
     imgs = imgs[start:end,:]
