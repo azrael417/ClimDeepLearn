@@ -156,20 +156,28 @@ def main():
 	    train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3).minimize(loss)
 	    tf.global_variables_initializer().run()
 	    indices = np.random.choice(trn.shape[0],batch)
-	    batch_trn = trn[indices, ...].reshape([batch,96,144,1])
+	    #batch_trn = trn[indices, ...].reshape([batch,96,144,1])
 	    #batch_trn_labels = trn_labels[:batch,...].reshape([batch,96,144,1])
-	    batch_trn_labels = trn_labels[indices, ...].reshape([batch,96,144,1])
-	    for ii in range(10):
+	    #batch_trn_labels = trn_labels[indices, ...].reshape([batch,96,144,1])
+	    for ii in range(100):
+		l = []
 		for jj in np.arange(0,trn.shape[0],batch):
 		    try:
 			batch_trn = trn[jj:jj+batch,...]
 			batch_trn_labels = trn_labels[jj:jj+batch,...] 
+		    	batch_trn = batch_trn.reshape([batch,96,144,1])
+		    	batch_trn_labels = batch_trn_labels.reshape([batch,96,144,1])
 		    except:
 			batch_trn = trn[jj:,...]
 			batch_trn_labels = trn_labels[jj:,...] 
+		    	batch_trn = batch_trn.reshape([batch_trn.shape[0],96,144,1])
+		    	batch_trn_labels = batch_trn_labels.reshape([batch_trn_labels.shape[0],96,144,1])
 		    feed_dict = {images:batch_trn,labels:batch_trn_labels}
-	            _,l = sess.run([train_op,loss],feed_dict=feed_dict)
-		    print("Loss for epoch {} and iteration {} is {}".format(ii,jj,l))
+	            _,loss_itr = sess.run([train_op,loss],feed_dict=feed_dict)
+		    l.append(loss_itr)
+		    if np.mod(jj,640):
+			    print("Loss for epoch {} and iteration {} is {}".format(ii,jj,loss_itr))
+	        print("##########Loss for epoch {} is {}#########".format(ii,np.array(l).mean()))
 	    import IPython; IPython.embed()
             writer = tf.summary.FileWriter('./logs/dev', sess.graph)
 
