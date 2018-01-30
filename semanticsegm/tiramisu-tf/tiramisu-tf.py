@@ -242,10 +242,10 @@ def main():
                     _, tmp_loss = sess.run([train_op,loss], feed_dict={handle: trn_handle})
                     train_steps += 1
                     mean_loss += tmp_loss
-                    print("Loss for step {} is {}".format(train_steps,mean_loss/train_steps))
+                    print("Loss for step {} (of {}) is {}".format(train_steps, num_batches_per_epoch, mean_loss/train_steps))
                 except tf.errors.OutOfRangeError:
                     mean_loss /= train_steps
-                    print("Loss for epoch {} is {}".format(epoch,mean_loss))
+                    print("Loss for epoch {} (of {}) is {}".format(epoch, num_epochs, mean_loss))
                     #reinitialize dataset
                     sess.run(trn_init_op, feed_dict={handle: trn_handle, feat_placeholder: trn,lab_placeholder: trn_labels})
                     #reset counters
