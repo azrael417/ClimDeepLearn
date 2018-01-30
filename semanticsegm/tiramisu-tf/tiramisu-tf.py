@@ -99,16 +99,23 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=3,
 #Load Data
 def load_data():
 	#Load the images and the labels
-	imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/images.npy")
+	imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
 	imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-	labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/masks.npy")
+	labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
 
 	#Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
 	#See README in $SCRATCH/segmentation_labels/dump_v4 on CORI
-	image_metadata = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/image_metadata.npy")
+	image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/image_metadata.npy")
 
 	imgs = imgs[:,3:-3,...]
 	labels = labels[:,3:-3,:]
+    
+    #split by rank:
+    num_samples_per_rank = imgs.shape[0] // hvd.ranks()
+    start = hvd.rank() * num_samples_per_rank
+    end = np.min([(hvd.rank()+1) * num_samples_per_rank, imgs.shape[0]])
+    imgs = imgs[start:end,:]
+    labels = labels[start:end,:]
 
 	#PERMUTATION OF DATA
 	np.random.seed(12345)
@@ -137,45 +144,113 @@ def load_data():
 	#test = (test - trn_mean)/trn_std
 	return trn, trn_labels, valid, valid_labels, test, test_labels
 
+#main function
 def main():
-  
+    #parameters
+    batch = 32
+    num_epochs = 10
+
     #init horovod
     hvd.init()
-
+    
+    #get data
     training_graph = tf.Graph()
+    print("Loading data...")
     trn, trn_labels, valid, valid_labels, test, test_labels = load_data()
-    batch = 32
-    #trn = np.random.randint(255,size=(10,96,144,1))
-    #trn_labels = np.random.randint(3,size=(10,96,144,1))
-    #trn = (trn - trn.mean(axis=0))/trn.std(axis=0)
+    print("done.")
+    
+    with training_graph.as_default():
+        #create datasets
+        #training
+        feat_placeholder = tf.placeholder(trn.dtype, trn.shape, name="feature-placeholder")
+        lab_placeholder = tf.placeholder(trn_labels.dtype, trn_labels.shape, name="labels-placeholder")
+        trn_dataset = tf.data.Dataset.from_tensor_slices((feat_placeholder, lab_placeholder))
+        trn_dataset = trn_dataset.shuffle(buffer_size=10000)
+        trn_dataset = trn_dataset.repeat(num_epochs)
+        trn_dataset = trn_dataset.batch(batch)
+        #validation
+        val_dataset = tf.data.Dataset.from_tensor_slices((feat_placeholder, lab_placeholder))
+        val_dataset = val_dataset.repeat(1)
+        val_dataset = val_dataset.batch(batch)
+        #create feedable iterator
+        handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
+        iterator = tf.data.Iterator.from_string_handle(handle, trn_dataset.output_types, trn_dataset.output_shapes)
+        next_elem = iterator.get_next()
+        #create init handles
+        trn_iterator = trn_dataset.make_initializable_iterator()
+        val_iterator = val_dataset.make_initializable_iterator()
+        trn_init_op = iterator.make_initializer(trn_dataset)
+        val_init_op = iterator.make_initializer(val_dataset)
+    
+    #session config
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=2,
+                               intra_op_parallelism_threads=33,
+                               log_device_placement=False,
+                               allow_soft_placement=True)
+    sess_config.gpu_options.visible_device_list = str(hvd.local_rank())
     
 
+    #create graph
     with training_graph.as_default():
+        #set up model
+        #images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
+        #labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
+        model = create_tiramisu(3, next_elem[0])
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=model)
+        global_step = tf.train.get_or_create_global_step()
+        #set up optimizer
+        train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+        train_op = hvd.DistributedOptimizer(train_op)
+        train_op = train_op.minimize(loss)
+        
+        #compute epochs and stuff:
+        num_samples = trn.shape[0]
+        num_batches_per_epoch = num_samples // batch
+        num_steps = num_epochs*num_batches_per_epoch
+        
+        #hooks
+        #these hooks are essential
+        hooks = [hvd.BroadcastGlobalVariablesHook(0), tf.train.StopAtStepHook(last_step=num_steps)]
+        #initializers:
+        init_op =  tf.global_variables_initializer()
+        
+        #checkpointing
+        if hvd.rank() == 0:
+            checkpoint_dir = './checkpoints' if hvd.rank() == 0 else None
+            checkpoint_save_freq = num_batches_per_epoch
+            checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
+            hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+        
+        #start session
+        with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
+            #initialize
+            sess.run(init_op)
+            #iterators
+            #create handles
+            trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
+            #init iterators
+            sess.run(trn_init_op, feed_dict={handle: trn_handle, feat_placeholder: trn,lab_placeholder: trn_labels})
 
-        with tf.Session() as sess:
-            images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
-	    labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
-            model = create_tiramisu(3, images)
-	    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels,logits=model)
-	    train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3).minimize(loss)
-	    tf.global_variables_initializer().run()
-	    indices = np.random.choice(trn.shape[0],batch)
-	    batch_trn = trn[indices, ...].reshape([batch,96,144,1])
-	    #batch_trn_labels = trn_labels[:batch,...].reshape([batch,96,144,1])
-	    batch_trn_labels = trn_labels[indices, ...].reshape([batch,96,144,1])
-	    for ii in range(10):
-		for jj in np.arange(0,trn.shape[0],batch):
-		    try:
-			batch_trn = trn[jj:jj+batch,...]
-			batch_trn_labels = trn_labels[jj:jj+batch,...] 
-		    except:
-			batch_trn = trn[jj:,...]
-			batch_trn_labels = trn_labels[jj:,...] 
-		    feed_dict = {images:batch_trn,labels:batch_trn_labels}
-	            _,l = sess.run([train_op,loss],feed_dict=feed_dict)
-		    print("Loss for epoch {} and iteration {} is {}".format(ii,jj,l))
-	    import IPython; IPython.embed()
-            writer = tf.summary.FileWriter('./logs/dev', sess.graph)
+            #do the training
+            epoch = 1
+            mean_loss = 0.
+            train_steps = 0
+            while not sess.should_stop():
+                try:
+                    #construct feed dict
+                    _, tmp_loss = sess.run([train_op,loss], feed_dict={handle: trn_handle})
+                    train_steps += 1
+                    mean_loss += tmp_loss
+                    print("Loss for step {} is {}".format(train_steps,mean_loss/train_steps))
+                except tf.errors.OutOfRangeError:
+                    mean_loss /= train_steps
+                    print("Loss for epoch {} is {}".format(epoch,mean_loss))
+                    #reinitialize dataset
+                    sess.run(trn_init_op, feed_dict={handle: trn_handle, feat_placeholder: trn,lab_placeholder: trn_labels})
+                    #reset counters
+                    epoch += 1
+                    train_steps = 0
+                    mean_loss = 0.
 
 if __name__ == '__main__':
     main()
