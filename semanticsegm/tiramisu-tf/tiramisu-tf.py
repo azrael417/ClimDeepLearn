@@ -98,17 +98,18 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=3,
 
 #Load Data
 def load_data():
-	#Load the images and the labels
-	imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
-	imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-	labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
-
-	#Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
-	#See README in $SCRATCH/segmentation_labels/dump_v4 on CORI
-	image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/image_metadata.npy")
-
-	imgs = imgs[:,3:-3,...]
-	labels = labels[:,3:-3,:]
+    #Load the images and the labels
+    imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
+    imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
+    labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
+    
+    #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
+    #See README in $SCRATCH/segmentation_labels/dump_v4 on CORI
+    image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/image_metadata.npy")
+    
+    #do some slicing
+    imgs = imgs[:,3:-3,...]
+    labels = labels[:,3:-3,:]
     
     #split by rank:
     num_samples_per_rank = imgs.shape[0] // hvd.ranks()
@@ -117,32 +118,32 @@ def load_data():
     imgs = imgs[start:end,:]
     labels = labels[start:end,:]
 
-	#PERMUTATION OF DATA
-	np.random.seed(12345)
-	shuffle_indices = np.random.permutation(len(imgs))
-	np.save("./shuffle_indices.npy", shuffle_indices)
-	imgs = imgs[shuffle_indices]
-	labels = labels[shuffle_indices]
-	image_metadata = image_metadata[shuffle_indices]
-
-	#Create train/validation/test split
-	trn = imgs[:int(0.8*len(imgs))]
-	trn_labels = labels[:int(0.8 * len(labels))]
-	test = imgs[int(0.8*len(imgs)):int(0.9*len(imgs))]
-	test_labels = labels[int(0.8*len(imgs)):int(0.9*len(imgs))]
-	valid = imgs[int(0.9*len(imgs)):]
-	valid_labels = labels[int(0.9*len(imgs)):]
-
-	rnd_trn = len(trn_labels)
-	rnd_test = len(test_labels)	
-	
-	#Normalize
-	trn_mean = trn.mean(axis=0)
-	trn_std = trn.std(axis=0)
-	#trn = (trn - trn_mean)/trn_std
-	#valid = (valid - trn_mean)/trn_std
-	#test = (test - trn_mean)/trn_std
-	return trn, trn_labels, valid, valid_labels, test, test_labels
+    #PERMUTATION OF DATA
+    np.random.seed(12345)
+    shuffle_indices = np.random.permutation(len(imgs))
+    np.save("./shuffle_indices.npy", shuffle_indices)
+    imgs = imgs[shuffle_indices]
+    labels = labels[shuffle_indices]
+    image_metadata = image_metadata[shuffle_indices]
+    
+    #Create train/validation/test split
+    trn = imgs[:int(0.8*len(imgs))]
+    trn_labels = labels[:int(0.8 * len(labels))]
+    test = imgs[int(0.8*len(imgs)):int(0.9*len(imgs))]
+    test_labels = labels[int(0.8*len(imgs)):int(0.9*len(imgs))]
+    valid = imgs[int(0.9*len(imgs)):]
+    valid_labels = labels[int(0.9*len(imgs)):]
+    
+    rnd_trn = len(trn_labels)
+    rnd_test = len(test_labels)	
+    
+    #Normalize
+    trn_mean = trn.mean(axis=0)
+    trn_std = trn.std(axis=0)
+    #trn = (trn - trn_mean)/trn_std
+    #valid = (valid - trn_mean)/trn_std
+    #test = (test - trn_mean)/trn_std
+    return trn, trn_labels, valid, valid_labels, test, test_labels
 
 #main function
 def main():
