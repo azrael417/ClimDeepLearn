@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow.contrib.keras as tfk
 import horovod.tensorflow as hvd
 import numpy as np
 
@@ -10,8 +11,8 @@ image_width = 144
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(x, nf, sz, strides=(stride,stride), padding='same',
                             #kernel_initializer='he_uniform',
-                            kernel_initializer= tf.initializers.random_uniform(),
-                            bias_initializer=tf.initializers.random_uniform(),
+                            kernel_initializer= tfk.initializers.he_uniform(),
+                            bias_initializer=tf.initializers.zeros(),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
                             )
 
@@ -61,8 +62,10 @@ def transition_up(added,wd,training):
     #x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),padding='same',filters=ch,kernel_initializer='he_uniform')
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
 				   padding='same',filters=ch,
-				   kernel_initializer=tf.initializers.random_uniform(),
-				   bias_initializer=tf.initializers.random_uniform())
+				   kernel_initializer=tfk.initializers.he_uniform(),
+				   bias_initializer=tf.initializers.zeros(),
+                   kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
+                   )
     return x 
     
 	
@@ -202,7 +205,7 @@ def main():
         #set up model
         #images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
         #labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
-        model = create_tiramisu(3, next_elem[0])
+        model = create_tiramisu(3, next_elem[0], nb_layers_per_block=blocks, p=0.2,wd=1e-4)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=model)
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
