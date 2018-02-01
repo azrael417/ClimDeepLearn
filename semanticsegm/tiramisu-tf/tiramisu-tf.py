@@ -222,7 +222,8 @@ def main():
         train_op = hvd.DistributedOptimizer(train_op)
         train_op = train_op.minimize(loss)
         #set up streaming metrics
-        iou_op, iou_update_op = tf.metrics.streaming_mean_iou(model,next_elem[1],3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
+        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        iou_op, iou_update_op = tf.metrics.mean_iou(model,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
         num_samples = trn.shape[0] // hvd.size()
@@ -259,7 +260,7 @@ def main():
             while not sess.should_stop():
                 try:
                     #construct feed dict
-                    _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_loss += tmp_loss
                     print("REPORT: rank {}, loss for step {} (of {}) is {}".format(hvd.rank(), train_steps, num_batches_per_epoch, train_loss/train_steps))
                 except tf.errors.OutOfRangeError:
@@ -280,18 +281,21 @@ def main():
                 eval_steps = 0
                 eval_loss = 0.
                 #init iterator
+                sess.run([init_op, init_local_op])
                 sess.run(val_init_op, feed_dict={handle: val_handle, feat_placeholder: val, lab_placeholder: val_labels})
                 
                 #start evaluation
                 while True:
                     try:
                         #construct feed dict
-                        tmp_loss = sess.run(loss, feed_dict={handle: val_handle})
+                        _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: val_handle})
                         eval_loss += tmp_loss
                         eval_steps += 1
                     except tf.errors.OutOfRangeError:
                         eval_loss /= eval_steps
-                        print("Evaluation loss for {} epochs is {}".format(epoch-1, eval_loss))
+                        print("FINAL: evaluation loss for {} epochs is {}".format(epoch-1, eval_loss))
+                        iou_score = sess.run([iou_op])
+                        print("FINAL: evaluation IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
     main()
