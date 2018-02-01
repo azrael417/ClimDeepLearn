@@ -218,9 +218,9 @@ def main():
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=model)
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
-        train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3)
-        train_op = hvd.DistributedOptimizer(train_op)
-        train_op = train_op.minimize(loss)
+        opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+        opt = hvd.DistributedOptimizer(opt)
+        train_op = opt.minimize(loss)
         #set up streaming metrics
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         iou_op, iou_update_op = tf.metrics.mean_iou(model,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
