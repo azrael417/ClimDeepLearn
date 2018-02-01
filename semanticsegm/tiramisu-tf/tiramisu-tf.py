@@ -119,12 +119,12 @@ def load_data():
     imgs = imgs[:,3:-3,...]
     labels = labels[:,3:-3,:]
     
-    #split by rank:
-    num_samples_per_rank = imgs.shape[0] // hvd.size()
-    start = hvd.rank() * num_samples_per_rank
-    end = np.min([(hvd.rank()+1) * num_samples_per_rank, imgs.shape[0]])
-    imgs = imgs[start:end,:]
-    labels = labels[start:end,:]
+    #DEBUG
+    #only take slice:
+    imgs = imgs[:100,:]
+    labels = labels[:100,:]
+    image_metadata = image_metadata[:100,:]
+    #DEBUG
 
     #PERMUTATION OF DATA
     np.random.seed(12345)
@@ -142,6 +142,7 @@ def load_data():
     valid = imgs[int(0.9*len(imgs)):]
     valid_labels = labels[int(0.9*len(imgs)):]
     
+    #length of data
     rnd_trn = len(trn_labels)
     rnd_test = len(test_labels)	
     
@@ -151,6 +152,7 @@ def load_data():
     #trn = (trn - trn_mean)/trn_std
     #valid = (valid - trn_mean)/trn_std
     #test = (test - trn_mean)/trn_std
+    
     return trn, trn_labels, valid, valid_labels, test, test_labels
 
 #main function
@@ -158,7 +160,8 @@ def main():
     #parameters
     batch = 32
     blocks = [3,3,4,7,10]
-    num_epochs = 10
+    #num_epochs = 10
+    num_epochs = 2
 
     #init horovod
     hvd.init()
@@ -171,17 +174,23 @@ def main():
     
     with training_graph.as_default():
         #create datasets
-        #training
+        #placeholders
         feat_placeholder = tf.placeholder(trn.dtype, trn.shape, name="feature-placeholder")
         lab_placeholder = tf.placeholder(trn_labels.dtype, trn_labels.shape, name="labels-placeholder")
+        #train dataset
         trn_dataset = tf.data.Dataset.from_tensor_slices((feat_placeholder, lab_placeholder))
+        trn_dataset = trn_dataset.shard(hvd.size(),hvd.rank())
         trn_dataset = trn_dataset.shuffle(buffer_size=10000)
         trn_dataset = trn_dataset.repeat(num_epochs)
         trn_dataset = trn_dataset.batch(batch)
-        #validation
+        #validation dataset
         val_dataset = tf.data.Dataset.from_tensor_slices((feat_placeholder, lab_placeholder))
         val_dataset = val_dataset.repeat(1)
         val_dataset = val_dataset.batch(batch)
+        #test dataset
+        tst_dataset = tf.data.Dataset.from_tensor_slices((feat_placeholder, lab_placeholder))
+        tst_dataset = tst_dataset.repeat(1)
+        tst_dataset = tst_dataset.batch(batch)
         #create feedable iterator
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, trn_dataset.output_types, trn_dataset.output_shapes)
@@ -212,9 +221,11 @@ def main():
         train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3)
         train_op = hvd.DistributedOptimizer(train_op)
         train_op = train_op.minimize(loss)
+        #set up streaming metrics
+        iou_op, iou_update_op = tf.metrics.streaming_mean_iou(model,next_elem[1],3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
-        num_samples = trn.shape[0]
+        num_samples = trn.shape[0] // hvd.size()
         num_batches_per_epoch = num_samples // batch
         num_steps = num_epochs*num_batches_per_epoch
         
@@ -223,6 +234,7 @@ def main():
         hooks = [hvd.BroadcastGlobalVariablesHook(0), tf.train.StopAtStepHook(last_step=num_steps)]
         #initializers:
         init_op =  tf.global_variables_initializer()
+        init_local_op = tf.local_variables_initializer()
         
         #checkpointing
         if hvd.rank() == 0:
@@ -234,7 +246,7 @@ def main():
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
-            sess.run(init_op)
+            sess.run([init_op, init_local_op])
             #iterators
             #create handles
             trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
@@ -243,25 +255,43 @@ def main():
 
             #do the training
             epoch = 1
-            mean_loss = 0.
-            train_steps = 0
+            train_loss = 0.
             while not sess.should_stop():
                 try:
                     #construct feed dict
-                    _, tmp_loss = sess.run([train_op,loss], feed_dict={handle: trn_handle})
-                    train_steps += 1
-                    mean_loss += tmp_loss
-                    print("Loss for step {} (of {}) is {}".format(train_steps, num_batches_per_epoch, mean_loss/train_steps))
+                    _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    train_loss += tmp_loss
+                    print("REPORT: rank {}, loss for step {} (of {}) is {}".format(hvd.rank(), train_steps, num_batches_per_epoch, train_loss/train_steps))
                 except tf.errors.OutOfRangeError:
-                    mean_loss /= train_steps
-                    print("Loss for epoch {} (of {}) is {}".format(epoch, num_epochs, mean_loss))
+                    train_loss /= train_steps
+                    print("COMPLETED: rank {}, loss for epoch {} (of {}) is {}".format(hvd.rank(), epoch, num_epochs, train_loss))
+                    iou_score = sess.run(iou_op)
+                    print("COMPLETED: rank {}, IoU for epoch {} (of {}) is {}".format(hvd.rank(), epoch, num_epochs, iou_score))
                     #reinitialize dataset
                     sess.run(trn_init_op, feed_dict={handle: trn_handle, feat_placeholder: trn,lab_placeholder: trn_labels})
                     #reset counters
                     epoch += 1
-                    train_steps = 0
-                    mean_loss = 0.
+                    train_loss = 0.
 
+        #evaluation only on rank 0
+        if hvd.rank() == 0:
+            with tf.Session(config=sess_config) as sess:
+                #init eval
+                eval_steps = 0
+                eval_loss = 0.
+                #init iterator
+                sess.run(val_init_op, feed_dict={handle: val_handle, feat_placeholder: val, lab_placeholder: val_labels})
+                
+                #start evaluation
+                while True:
+                    try:
+                        #construct feed dict
+                        tmp_loss = sess.run(loss, feed_dict={handle: val_handle})
+                        eval_loss += tmp_loss
+                        eval_steps += 1
+                    except tf.errors.OutOfRangeError:
+                        eval_loss /= eval_steps
+                        print("Evaluation loss for {} epochs is {}".format(epoch-1, eval_loss))
 
 if __name__ == '__main__':
     main()
