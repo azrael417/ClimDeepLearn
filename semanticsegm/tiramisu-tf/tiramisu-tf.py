@@ -10,7 +10,8 @@ image_width = 144
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(x, nf, sz, strides=(stride,stride), padding='same',
                             #kernel_initializer='he_uniform',
-                            #bias_initializer=tf.zeros_zeros_initializer(),
+                            kernel_initializer= tf.initializers.random_uniform(),
+                            bias_initializer=tf.initializers.random_uniform(),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
                             )
 
@@ -22,7 +23,7 @@ def dense_block(n, x, growth_rate, p, wd, training):
             b = tf.layers.batch_normalization(x, training=training)
             b = tf.nn.relu(b)
             b = conv(b, growth_rate, sz=3, wd=wd)
-            if p: b = tf.layers.dropout(b, p=p, training=training)
+            if p: b = tf.layers.dropout(b, rate=p, training=training)
 
             x = tf.concat([x, b], axis=-1)
             added.append(b)
@@ -34,7 +35,7 @@ def transition_dn(x, p, wd, training):
         b = tf.layers.batch_normalization(x, training=training)
         b = tf.nn.relu(b)
         b = conv(b, x.get_shape().as_list()[-1], sz=1, wd=wd, stride=2)
-        if p: b = tf.layers.dropout(b, p=p, training=training)
+        if p: b = tf.layers.dropout(b, rate=p, training=training)
     return b
 
 def down_path(x, nb_layers, growth_rate, p, wd, training):
@@ -57,7 +58,11 @@ def reverse(a):
 def transition_up(added,wd,training):
     x = tf.concat(added,axis=-1) 
     _, r, c, ch = x.get_shape().as_list()
-    x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),padding='same',filters=ch)
+    #x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),padding='same',filters=ch,kernel_initializer='he_uniform')
+    x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
+				   padding='same',filters=ch,
+				   kernel_initializer=tf.initializers.random_uniform(),
+				   bias_initializer=tf.initializers.random_uniform())
     return x 
     
 	
@@ -68,10 +73,10 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
 	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
-# def create_tiramisu(nb_classes, img_input, nb_dense_block=6, 
-        # growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
-def create_tiramisu(nb_classes, img_input, nb_dense_block=3, 
-        growth_rate=2, nb_filter=4, nb_layers_per_block=5, p=None, wd=0., training=True):
+def create_tiramisu(nb_classes, img_input, nb_dense_block=6, 
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
+#def create_tiramisu(nb_classes, img_input, nb_dense_block=3, 
+        #growth_rate=2, nb_filter=4, nb_layers_per_block=5, p=None, wd=0., training=True):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
@@ -149,6 +154,7 @@ def load_data():
 def main():
     #parameters
     batch = 32
+    blocks = [3,3,4,7,10]
     num_epochs = 10
 
     #init horovod
@@ -189,7 +195,7 @@ def main():
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(hvd.local_rank())
-    
+
 
     #create graph
     with training_graph.as_default():
@@ -252,6 +258,7 @@ def main():
                     epoch += 1
                     train_steps = 0
                     mean_loss = 0.
+
 
 if __name__ == '__main__':
     main()
