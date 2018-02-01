@@ -121,9 +121,9 @@ def load_data():
     
     #DEBUG
     #only take slice:
-    imgs = imgs[:100,:]
-    labels = labels[:100,:]
-    image_metadata = image_metadata[:100,:]
+    imgs = imgs[:300,:]
+    labels = labels[:300,:]
+    image_metadata = image_metadata[:300,:]
     #DEBUG
 
     #PERMUTATION OF DATA
@@ -157,14 +157,14 @@ def load_data():
 
 #main function
 def main():
+    #init horovod
+    hvd.init()
+    
     #parameters
     batch = 32
     blocks = [3,3,4,7,10]
     #num_epochs = 10
     num_epochs = 2
-
-    #init horovod
-    hvd.init()
     
     #get data
     training_graph = tf.Graph()
@@ -260,10 +260,12 @@ def main():
             while not sess.should_stop():
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    _, _, tmp_loss = sess.run([train_op, iou_update_op, loss], feed_dict={handle: trn_handle})
+                    train_steps = sess.run(global_step)
                     train_loss += tmp_loss
                     print("REPORT: rank {}, loss for step {} (of {}) is {}".format(hvd.rank(), train_steps, num_batches_per_epoch, train_loss/train_steps))
                 except tf.errors.OutOfRangeError:
+                    train_steps = sess.run(global_step)
                     train_loss /= train_steps
                     print("COMPLETED: rank {}, loss for epoch {} (of {}) is {}".format(hvd.rank(), epoch, num_epochs, train_loss))
                     iou_score = sess.run(iou_op)
