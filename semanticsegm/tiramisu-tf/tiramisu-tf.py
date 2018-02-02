@@ -181,7 +181,7 @@ def main():
 		    feed_dict = {images:batch_trn,labels:batch_trn_labels}
 	            _,loss_itr = sess.run([train_op,loss],feed_dict=feed_dict)
 		    l.append(loss_itr)
-		    if np.mod(jj,1280):
+		    if np.mod(jj,batch*10):
 			    print("Loss for epoch {} and iteration {} is {}".format(ii,jj,loss_itr))
 	        print("##########Loss for epoch {} is {}#########".format(ii,np.array(l).mean()))
 	    import IPython; IPython.embed()
