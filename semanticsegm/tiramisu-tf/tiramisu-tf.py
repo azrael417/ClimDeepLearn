@@ -67,9 +67,11 @@ def transition_up(added,wd,training):
 	
 def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
     for i,n in enumerate(nb_layers):
-	x = transition_up(added,wd,training)
-	x = tf.concat([x,skips[i]],axis=-1)
-	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
+	with tf.name_scope("TU%i"%i):
+		x = transition_up(added,wd,training)
+	with tf.name_scope("DB%i"%i):
+		x = tf.concat([x,skips[i]],axis=-1)
+		x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
 def create_tiramisu(nb_classes, img_input, nb_dense_block=6, 
@@ -81,7 +83,7 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    with tf.variable_scope("conv_input") as scope:
+    with tf.variable_scope("conv_input",reuse=tf.AUTO_REUSE) as scope:
         x = conv(img_input, nb_filter, sz=3, wd=wd)
         if p: x = tf.layers.dropout(x, rate=p, training=training)
 
@@ -103,13 +105,15 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
 #Load Data
 def load_data():
 	#Load the images and the labels
-	imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/images.npy")
+	#imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/images.npy")
+	imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy")
 	imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-	labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/masks.npy")
+	#labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/masks.npy")
+	labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy")
 
 	#Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
 	#See README in $SCRATCH/segmentation_labels/dump_v4 on CORI
-	image_metadata = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/image_metadata.npy")
+	#image_metadata = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v2/image_metadata.npy")
 
 	imgs = imgs[:,3:-3,...]
 	labels = labels[:,3:-3,:]
@@ -144,11 +148,11 @@ def load_data():
 def main():
 
     training_graph = tf.Graph()
-    trn, trn_labels, valid, valid_labels, test, test_labels = load_data()
+    #trn, trn_labels, valid, valid_labels, test, test_labels = load_data()
     batch = 32
-    #trn = np.random.randint(255,size=(10,96,144,1))
-    #trn_labels = np.random.randint(3,size=(10,96,144,1))
-    #trn = (trn - trn.mean(axis=0))/trn.std(axis=0)
+    trn = np.random.randint(255,size=(10,96,144,1))
+    trn_labels = np.random.randint(3,size=(10,96,144,1))
+    trn = (trn - trn.mean(axis=0))/trn.std(axis=0)
     blocks = [3,3,4,7,10]
     
 
@@ -158,6 +162,7 @@ def main():
             images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
 	    labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
             model = create_tiramisu(3, images, nb_layers_per_block=blocks, p=0.2,wd=1e-4)
+	    import IPython; IPython.embed()
 	    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels,logits=model)
 	    train_op = tf.train.RMSPropOptimizer(learning_rate=1e-3).minimize(loss)
 	    tf.global_variables_initializer().run()
