@@ -120,9 +120,9 @@ def load_data():
     
     #DEBUG
     #only take slice:
-    imgs = imgs[:300,:]
-    labels = labels[:300,:]
-    image_metadata = image_metadata[:300,:]
+    #imgs = imgs[:300,:]
+    #labels = labels[:300,:]
+    #image_metadata = image_metadata[:300,:]
     #DEBUG
 
     #PERMUTATION OF DATA
