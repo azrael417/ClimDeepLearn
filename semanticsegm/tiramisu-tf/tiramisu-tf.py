@@ -106,13 +106,16 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
 #Load Data
 def load_data():
     #Load the images and the labels
-    imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
+    #imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
+    imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy").astype(np.float32)
     imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-    labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
+    #labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
+    labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy").astype(np.int32)
+ 
     
     #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
     #See README in $SCRATCH/segmentation_labels/dump_v4 on CORI
-    image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/image_metadata.npy")
+    #image_metadata = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/image_metadata.npy")
     
     #do some slicing
     imgs = imgs[:,3:-3,...]
@@ -131,7 +134,7 @@ def load_data():
     np.save("./shuffle_indices.npy", shuffle_indices)
     imgs = imgs[shuffle_indices]
     labels = labels[shuffle_indices]
-    image_metadata = image_metadata[shuffle_indices]
+    #image_metadata = image_metadata[shuffle_indices]
     
     #Create train/validation/test split
     trn = imgs[:int(0.8*len(imgs))]
