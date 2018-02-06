@@ -224,9 +224,13 @@ def main():
         iterator = tf.data.Iterator.from_string_handle(handle, trn_dataset.output_types, trn_dataset.output_shapes)
         next_elem = iterator.get_next()
         #create init handles
+        #tst
         trn_iterator = trn_dataset.make_initializable_iterator()
-        val_iterator = val_dataset.make_initializable_iterator()
+        trn_handle_string = trn_iterator.string_handle()
         trn_init_op = iterator.make_initializer(trn_dataset)
+        #val
+        val_iterator = val_dataset.make_initializable_iterator()
+        val_handle_string = val_iterator.string_handle()
         val_init_op = iterator.make_initializer(val_dataset)
     
     
@@ -276,24 +280,24 @@ def main():
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
             hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
         
-        #DEBUG
-        #summary
-        if comm_rank == 0:
-            print("write graph for debugging")
-            tf.summary.scalar("loss",loss)
-            summary_op = tf.summary.merge_all()
-            #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
-            with tf.Session(config=sess_config) as sess:
-                sess.run([init_op, init_local_op])
-                #create iterator handles
-                trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
-                #init iterators
-                sess.run(trn_init_op, feed_dict={handle: trn_handle, trn_feat_placeholder: trn, trn_lab_placeholder: trn_labels})
-                #summary:
-                sess.run(summary_op, feed_dict={handle: trn_handle})
-                #summary file writer
-                summary_writer = tf.summary.FileWriter('./logs', sess.graph)
-        #DEBUG
+        ##DEBUG
+        ##summary
+        #if comm_rank == 0:
+        #    print("write graph for debugging")
+        #    tf.summary.scalar("loss",loss)
+        #    summary_op = tf.summary.merge_all()
+        #    #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
+        #    with tf.Session(config=sess_config) as sess:
+        #        sess.run([init_op, init_local_op])
+        #        #create iterator handles
+        #        trn_handle = sess.run(trn_handle_string)
+        #        #init iterators
+        #        sess.run(trn_init_op, feed_dict={handle: trn_handle, trn_feat_placeholder: trn, trn_lab_placeholder: trn_labels})
+        #        #summary:
+        #        sess.run(summary_op, feed_dict={handle: trn_handle})
+        #        #summary file writer
+        #        summary_writer = tf.summary.FileWriter('./logs', sess.graph)
+        ##DEBUG
         
 
         #start session
@@ -355,29 +359,29 @@ def main():
                 except tf.errors.OutOfRangeError:
                     break
 
-        #evaluation only on rank 0
+        #test only on rank 0
         #if hvd.rank() == 0:
         #    with tf.Session(config=sess_config) as sess:
         #        #init eval
         #        eval_steps = 0
         #        eval_loss = 0.
-        #        #init iterator
-        #        val_handle = sess.run(val_iterator.string_handle())
+        #        #init iterator and variables
         #        sess.run([init_op, init_local_op])
-        #        sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
+        #        tst_handle = sess.run(tst_handle_string)
+        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
         #        
         #        #start evaluation
         #        while True:
         #            try:
         #                #construct feed dict
-        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: val_handle})
-        #                eval_loss += tmp_loss
-        #                eval_steps += 1
+        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
+        #                test_loss += tmp_loss
+        #                test_steps += 1
         #            except tf.errors.OutOfRangeError:
-        #                eval_loss /= eval_steps
-        #                print("FINAL: evaluation loss for {} epochs is {}".format(epoch-1, eval_loss))
+        #                test_loss /= test_steps
+        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
         #                iou_score = sess.run([iou_op])
-        #                print("FINAL: evaluation IoU for {} epochs is {}".format(epoch-1, iou_score))
+        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
     main()
