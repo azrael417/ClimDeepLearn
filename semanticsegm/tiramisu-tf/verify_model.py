@@ -289,6 +289,7 @@ def main(chkpt=None):
             #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
             with tf.Session(config=sess_config) as sess:
 		saver.restore(sess,chkpt)
+		print("Model restored")
                 sess.run([init_op, init_local_op])
                 #create iterator handles
                 trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
@@ -298,6 +299,7 @@ def main(chkpt=None):
                 sess.run(summary_op, feed_dict={handle: trn_handle})
                 #summary file writer
                 summary_writer = tf.summary.FileWriter('./logs', sess.graph)
+		print("Wrote the sess graph")
         #DEBUG
         
 
@@ -307,6 +309,7 @@ def main(chkpt=None):
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
+	    print("Init the ops")
             #create iterator handles
             #trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
@@ -317,39 +320,26 @@ def main(chkpt=None):
             #do the training
             epoch = 1
             train_loss = 0.
-            while not sess.should_stop():
-                
-                #training loop
+              #construct feed dict
+              #_, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+            
+            #evaluation loop
+            eval_loss = 0.
+            eval_steps = 0
+            while True:
                 try:
                     #construct feed dict
-                    #_, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
-                        
-                        #evaluation loop
-                        eval_loss = 0.
-                        eval_steps = 0
-                        while True:
-                            try:
-                                #construct feed dict
-                                _, tmp_loss, val_model_predictions = sess.run([iou_update_op, loss, prediction], feed_dict={handle: val_handle})
-				imsave('test0.png',np.argmax(val_model_predictions[0,...],axis=2))
-				import IPython; IPython.embed()
-                                eval_loss += tmp_loss
-                                eval_steps += 1
-                            except tf.errors.OutOfRangeError:
-                                eval_loss /= eval_steps
-                                print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
-                                iou_score = sess.run(iou_op)
-                                print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-                                sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
-                                break
-                                
-                        #reset counters
-                        epoch += 1
-                        train_loss = 0.
-                    
+                    _, tmp_loss, val_model_predictions = sess.run([iou_update_op, loss, prediction], feed_dict={handle: val_handle})
+	    	    imsave('test'+ str(eval_steps)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                    eval_loss += tmp_loss
+                    eval_steps += 1
                 except tf.errors.OutOfRangeError:
+                    eval_loss /= eval_steps
+                    print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
+                    iou_score = sess.run(iou_op)
+                    print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
+                    sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
                     break
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
