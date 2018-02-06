@@ -1,6 +1,8 @@
 import tensorflow as tf
+import argparse
 import tensorflow.contrib.keras as tfk
 import numpy as np
+from scipy.misc import imsave
 
 #horovod, yes or no?
 horovod=True
@@ -174,7 +176,7 @@ def load_data():
     return trn, trn_labels, valid, valid_labels, test, test_labels
 
 #main function
-def main():
+def main(chkpt=None):
     #init horovod
     if horovod:
         hvd.init()
@@ -269,12 +271,13 @@ def main():
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
         
-        #checkpointing
-        if comm_rank == 0:
-            checkpoint_dir = './checkpoints'
-            checkpoint_save_freq = num_steps_per_epoch
-            checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
-            hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+        ##checkpointing
+        #if comm_rank == 0:
+            #checkpoint_dir = './checkpoints'
+            #checkpoint_save_freq = num_steps_per_epoch
+            #checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
+            #hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+	    
         
         #DEBUG
         #summary
@@ -282,8 +285,10 @@ def main():
             print("write graph for debugging")
             tf.summary.scalar("loss",loss)
             summary_op = tf.summary.merge_all()
+	    saver = tf.train.Saver()
             #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
             with tf.Session(config=sess_config) as sess:
+		saver.restore(sess,chkpt)
                 sess.run([init_op, init_local_op])
                 #create iterator handles
                 trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
@@ -317,19 +322,7 @@ def main():
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
-                    train_steps_in_epoch = train_steps%num_steps_per_epoch
-                    train_loss += tmp_loss
-                    
-                    if train_steps_in_epoch > 0:
-                        #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
-                    else:
-                        #print epoch report
-                        train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
-                        iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                    #_, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -337,7 +330,9 @@ def main():
                         while True:
                             try:
                                 #construct feed dict
-                                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: val_handle})
+                                _, tmp_loss, val_model_predictions = sess.run([iou_update_op, loss, prediction], feed_dict={handle: val_handle})
+				imsave('test0.png',np.argmax(val_model_predictions[0,...],axis=2))
+				import IPython; IPython.embed()
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
@@ -355,29 +350,9 @@ def main():
                 except tf.errors.OutOfRangeError:
                     break
 
-        #evaluation only on rank 0
-        #if hvd.rank() == 0:
-        #    with tf.Session(config=sess_config) as sess:
-        #        #init eval
-        #        eval_steps = 0
-        #        eval_loss = 0.
-        #        #init iterator
-        #        val_handle = sess.run(val_iterator.string_handle())
-        #        sess.run([init_op, init_local_op])
-        #        sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
-        #        
-        #        #start evaluation
-        #        while True:
-        #            try:
-        #                #construct feed dict
-        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: val_handle})
-        #                eval_loss += tmp_loss
-        #                eval_steps += 1
-        #            except tf.errors.OutOfRangeError:
-        #                eval_loss /= eval_steps
-        #                print("FINAL: evaluation loss for {} epochs is {}".format(epoch-1, eval_loss))
-        #                iou_score = sess.run([iou_op])
-        #                print("FINAL: evaluation IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint",default=None,type=str,help="Path and file name for checkpoint to load")
+    args = parser.parse_args() 
+    main(args.checkpoint)
