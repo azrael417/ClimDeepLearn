@@ -2,7 +2,7 @@
 #SBATCH -q regular
 #SBATCH -A nstaff
 #SBATCH -C knl
-#SBATCH -t 1:00:00
+#SBATCH -t 6:00:00
 #SBATCH -J climsegment_horovod
 
 #set up python stuff

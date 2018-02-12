@@ -1,14 +1,16 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
+from scipy.misc import imsave
 
 #horovod, yes or no?
 horovod=True
 try:
     import horovod.tensorflow as hvd
+    print("Enabling Horovod Support")
 except:
     horovod = False
-
+    print("Disabling Horovod Support")
 
 #GLOBAL CONSTANTS
 image_height = 96
@@ -115,11 +117,11 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
 #Load Data
 def load_data():
     #Load the images and the labels
-    #imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
-    imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy").astype(np.float32)
+    imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
+    #imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy").astype(np.float32)
     imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-    #labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
-    labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy").astype(np.int32)
+    labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
+    #labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy").astype(np.int32)
  
     
     #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
@@ -274,6 +276,7 @@ def main():
         init_local_op = tf.local_variables_initializer()
         
         #checkpointing
+        image_dir = './images'
         if comm_rank == 0:
             checkpoint_dir = './checkpoints'
             checkpoint_save_freq = num_steps_per_epoch
@@ -341,7 +344,9 @@ def main():
                         while True:
                             try:
                                 #construct feed dict
-                                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: val_handle})
+                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
+                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'+str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'+str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_labels[0,...],axis=2)*100)
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
