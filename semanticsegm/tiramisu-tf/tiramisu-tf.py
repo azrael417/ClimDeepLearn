@@ -232,7 +232,7 @@ def main():
     num_warmup_epochs = 1
     lr_train = 1e-3
     lr_warmup = 1e-5
-    #num_epochs = 2
+    lars_nu = 0.001
     
     #get data
     training_graph = tf.Graph()
@@ -301,7 +301,7 @@ def main():
         #set up 
         lr_schedule = create_lr_schedule({0: lr_warmup, (num_steps_per_epoch*num_warmup_epochs): lr_train}, global_step)
         #set up optimizer
-        train_op = create_optimizer(loss, global_step, learning_rate=lr_schedule, use_horovod=horovod, LARS_nu=0.001)
+        train_op = create_optimizer(loss, global_step, learning_rate=lr_schedule, use_horovod=horovod, LARS_nu=lars_nu)
         #encode labels
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         #iou metric
