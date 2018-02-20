@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -q regular
-#SBATCH -A nstaff
+#SBATCH -A m1759
 #SBATCH -C knl
 #SBATCH -t 6:00:00
 #SBATCH -J climsegment_horovod
