@@ -1,8 +1,8 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
-import os
 from scipy.misc import imsave
+import os
 
 #horovod, yes or no?
 horovod=True
@@ -14,11 +14,14 @@ except:
     print("Disabling Horovod Support")
 
 #GLOBAL CONSTANTS
-image_height = 96
-image_width = 144
-comm_rank = 0
-comm_local_rank = 0
-comm_size = 1
+#image_height = 96
+#image_width = 144
+image_height =  768 
+image_width = 1152
+#comm_rank = 0
+#comm_local_rank = 0
+#comm_size = 1
+
 
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(x, nf, sz, strides=(stride,stride), padding='same',
@@ -87,8 +90,6 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
 	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
-
-
 def create_tiramisu(nb_classes, img_input, nb_dense_block=6, 
          growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
 #def create_tiramisu(nb_classes, img_input, nb_dense_block=3, 
@@ -116,72 +117,32 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
     return x, tf.nn.softmax(x)
 
 
-def create_optimizer(loss, global_step, learning_rate=1e-3, use_horovod=True, LARS_nu=None, LARS_epsilon=1.0/16384.0):
-    #set up optimizer
-    opt = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-    
-    #allreduce the gradients if required:
-    if use_horovod:
-        opt = hvd.DistributedOptimizer(opt)
-        
-    #compute gradients
-    grads_and_vars = opt.compute_gradients(loss)
-    
-    #do LARS hacking:
-    if LARS_nu is not None and isinstance(LARS_nu, float):
-        for idx, (g, v) in enumerate(grads_and_vars):
-            if g is not None:
-                v_norm = tf.norm(tensor=v, ord=2)
-                g_norm = tf.norm(tensor=g, ord=2)
-                lars_local_lr = tf.cond(
-                                      pred = tf.logical_and( tf.not_equal(v_norm, tf.constant(0.0)), tf.not_equal(g_norm, tf.constant(0.0)) ),
-                                      true_fn = lambda: LARS_nu * v_norm / g_norm,
-                                      false_fn = lambda: LARS_epsilon)
-                grads_and_vars[idx] = (tf.scalar_mul(lars_local_lr, g), v)
-    
-    #apply the gradients
-    train_op = opt.apply_gradients(grads_and_vars, global_step=global_step)
-    
-    return train_op
-
-#pass dictionary of steps and LR
-def create_lr_schedule(rate_dictionary, global_step):
-    schedule = sorted(rate_dictionary.items(), key=lambda x: x[0])
-    boundaries = [int(x[0]) for x in schedule]
-    rates = [x[1] for x in schedule]
-    rates = rates[:1] + rates  # 
-    assert len(boundaries) + 1 == len(rates)
-
-    return tf.train.piecewise_constant(tf.cast(global_step, tf.int32), boundaries, rates)
-
-
 #Load Data
 def load_data():
+    #random images
+    imgs = np.random.randn(100,image_height,image_width,4).astype(np.float32)
+    #random labels
+    labels = np.random.randint(0,3,[100,image_height,image_width]).astype(np.int32)
+    
     #Load the images and the labels
-    imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
+    #imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
     #imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy").astype(np.float32)
-    imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-    labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
+    #print("imgs")
+    
+    #imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
+    #labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
     #labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy").astype(np.int32)
+    #print("labels")
+    #labels = np.random.randint(0,3,[100,image_height,image_width]).astype(np.int32)
+    #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
     
-    #do some slicing
-    imgs = imgs[:,3:-3,...]
-    labels = labels[:,3:-3,:]
-    
-    #DEBUG
-    #only take slice:
-    #imgs = imgs[:300,:]
-    #labels = labels[:300,:]
-    #image_metadata = image_metadata[:300,:]
-    #DEBUG
 
     #PERMUTATION OF DATA
-    np.random.seed(12345)
-    shuffle_indices = np.random.permutation(len(imgs))
-    np.save("./shuffle_indices.npy", shuffle_indices)
-    imgs = imgs[shuffle_indices]
-    labels = labels[shuffle_indices]
-    #image_metadata = image_metadata[shuffle_indices]
+    #np.random.seed(12345)
+    #shuffle_indices = np.random.permutation(len(imgs))
+    #np.save("./shuffle_indices.npy", shuffle_indices)
+    #imgs = imgs[shuffle_indices]
+    #labels = labels[shuffle_indices]
     
     #Create train/validation/test split
     trn = imgs[:int(0.8*len(imgs))]
@@ -192,12 +153,12 @@ def load_data():
     valid_labels = labels[int(0.9*len(imgs)):]
     
     #length of data
-    rnd_trn = len(trn_labels)
-    rnd_test = len(test_labels)	
+    #rnd_trn = len(trn_labels)
+    #rnd_test = len(test_labels)	
     
     #Normalize
-    trn_mean = trn.mean(axis=0)
-    trn_std = trn.std(axis=0)
+    #trn_mean = trn.mean(axis=0)
+    #trn_std = trn.std(axis=0)
     #trn = (trn - trn_mean)/trn_std
     #valid = (valid - trn_mean)/trn_std
     #test = (test - trn_mean)/trn_std
@@ -207,21 +168,21 @@ def load_data():
 #main function
 def main():
     #init horovod
+    comm_rank = 0 
+    comm_local_rank = 0
+    comm_size = 1
     if horovod:
         hvd.init()
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
         print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
-    
+        
     #parameters
-    batch = 32
-    blocks = [3,3,4,7,10]
+    batch = 4
+    blocks = [3,3,4,4,7,7,10,10]
     num_epochs = 150
-    num_warmup_epochs = 1
-    lr_train = 1e-3
-    lr_warmup = 1e-5
-    lars_nu = 0.001
+    #num_epochs = 2
     
     #get data
     training_graph = tf.Graph()
@@ -240,13 +201,15 @@ def main():
         tst_lab_placeholder = tf.placeholder(tst_labels.dtype, tst_labels.shape, name="test-labels-placeholder")
         #train dataset
         trn_dataset = tf.data.Dataset.from_tensor_slices((trn_feat_placeholder, trn_lab_placeholder))
-        trn_dataset = trn_dataset.shard(comm_size, comm_rank)
+        if horovod:
+            trn_dataset = trn_dataset.shard(comm_size, comm_rank)
         trn_dataset = trn_dataset.shuffle(buffer_size=100000)
         trn_dataset = trn_dataset.repeat(num_epochs)
         trn_dataset = trn_dataset.batch(batch)
         #validation dataset
         val_dataset = tf.data.Dataset.from_tensor_slices((val_feat_placeholder, val_lab_placeholder))
-        val_dataset = val_dataset.shard(comm_size, comm_rank)
+        if horovod:
+            val_dataset = val_dataset.shard(comm_size, comm_rank)
         val_dataset = val_dataset.repeat(1)
         val_dataset = val_dataset.batch(batch)
         #test dataset
@@ -278,24 +241,26 @@ def main():
 
     #create graph
     with training_graph.as_default():
+        #set up model
+        #images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
+        #labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
+        logit, prediction = create_tiramisu(3, next_elem[0], nb_layers_per_block=blocks, p=0.2, wd=1e-4)
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
+        global_step = tf.train.get_or_create_global_step()
+        #set up optimizer
+        opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+        if horovod:
+            opt = hvd.DistributedOptimizer(opt)
+        train_op = opt.minimize(loss, global_step=global_step)
+        #set up streaming metrics
+        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
+        
         #compute epochs and stuff:
         num_samples = trn.shape[0] // comm_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
-
-        #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], nb_layers_per_block=blocks, p=0.2, wd=1e-4)
-        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
-        global_step = tf.train.get_or_create_global_step()
-        #set up 
-        lr_schedule = create_lr_schedule({0: lr_warmup, (num_steps_per_epoch*num_warmup_epochs): lr_train}, global_step)
-        #set up optimizer
-        train_op = create_optimizer(loss, global_step, learning_rate=lr_schedule, use_horovod=horovod, LARS_nu=lars_nu)
-        #encode labels
-        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-        #iou metric
-        iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
-
+        
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
@@ -378,8 +343,10 @@ def main():
                             try:
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'+str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'+str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
