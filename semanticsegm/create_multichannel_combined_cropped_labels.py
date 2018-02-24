@@ -105,8 +105,8 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
   
   #Find the Otsu threshold of the image slice
   otsu_thresh = threshold_otsu(im_slice)
-  binary_adaptive = im_slice > otsu_thresh
-
+  #binary_adaptive = im_slice > otsu_thresh
+  binary_adaptive = im_slice > np.percentile(im_slice, 80)
   #Find the largest contiguous region of areas above the otsu threshold
   def filter_isolated_cells(array, struct):
       """ Return array with completely isolated single cells removed
@@ -123,16 +123,16 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
       return filtered_array
 
   # Run function on sample array
-  #binary_adaptive = filter_isolated_cells(binary_adaptive, struct=np.ones((3,3)))
+  binary_adaptive = filter_isolated_cells(binary_adaptive, struct=np.ones((3,3)))
 
   # Plot output, with all isolated single cells removed
   #plt.imshow(filtered_array, cmap=plt.cm.gray, interpolation='nearest')
 
   #Mark the pixels in the mask as 1 where there are TCs
-  #temp = mask[lat_start: lat_end, lon_start: lon_end]
-  #temp[np.where(binary_adaptive > 0)] = 1
-  #mask[lat_start: lat_end, lon_start: lon_end] = temp
-  mask[lat_start: lat_end, lon_start: lon_end] = binary_adaptive.astype(int) 
+  temp = mask[lat_start: lat_end, lon_start: lon_end]
+  temp[np.where(binary_adaptive > 0)] = 1
+  mask[lat_start: lat_end, lon_start: lon_end] = temp
+  #mask[lat_start: lat_end, lon_start: lon_end] = binary_adaptive.astype(int) 
   return mask, intersect
 
 def find_nearest(array,value):
@@ -173,7 +173,8 @@ np.save("./shuffle_indices_glob_files.npy", shuffle_indices)
 teca_subtables = teca_subtables[shuffle_indices]
 print("loaded in teca_subtables")
 
-path_to_labels = "/global/cscratch1/sd/mayur/segm_labels/"
+#path_to_labels = "/global/cscratch1/sd/mayur/segm_labels/"
+path_to_labels = "/global/cscratch1/sd/amahesh/segm_labels/"
 path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
 
 progress_counter = 0
@@ -194,7 +195,7 @@ for ii,table_name in enumerate(teca_subtables):
 
   #Add 4 to the tropical cyclone radii (so that the radii aren't too small)
   #curr_table['r0'] = curr_table['r0'][:] + 4
-  curr_table['r0'] = curr_table['r0'][:] + 8.5
+  curr_table['r0'] = curr_table['r0'][:] + 4.25
 
   #time_step_index refers to the 8 snapshots of data available for each data.
   for time_step_index in range(8):
@@ -272,7 +273,8 @@ for ii,table_name in enumerate(teca_subtables):
           #intersects.append(intersect)
         
       #The following if condition tests if the flood fill algorithm found any ARs
-      if len(instance_masks) > 0:       
+      if len(instance_masks) > 0:
+        print('now saving')
         imsave(path_to_labels+"tmq_"+str(ii)+"_"+str(time_step_index)+".png",TMQ)
         imsave(path_to_labels+"mask_TMQ_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TMQ)
         imsave(path_to_labels+"mask_u850_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_U850)
