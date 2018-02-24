@@ -129,9 +129,10 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
   #plt.imshow(filtered_array, cmap=plt.cm.gray, interpolation='nearest')
 
   #Mark the pixels in the mask as 1 where there are TCs
-  temp = mask[lat_start: lat_end, lon_start: lon_end]
-  temp[np.where(binary_adaptive > 0)] = 1
-  mask[lat_start: lat_end, lon_start: lon_end] = temp
+  #temp = mask[lat_start: lat_end, lon_start: lon_end]
+  #temp[np.where(binary_adaptive > 0)] = 1
+  #mask[lat_start: lat_end, lon_start: lon_end] = temp
+  mask[lat_start: lat_end, lon_start: lon_end] = binary_adaptive.astype(int) 
   return mask, intersect
 
 def find_nearest(array,value):
@@ -192,7 +193,8 @@ for ii,table_name in enumerate(teca_subtables):
   curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
 
   #Add 4 to the tropical cyclone radii (so that the radii aren't too small)
-  curr_table['r0'] = curr_table['r0'][:] + 4
+  #curr_table['r0'] = curr_table['r0'][:] + 4
+  curr_table['r0'] = curr_table['r0'][:] + 8.5
 
   #time_step_index refers to the 8 snapshots of data available for each data.
   for time_step_index in range(8):
@@ -251,28 +253,28 @@ for ii,table_name in enumerate(teca_subtables):
 
         if len(np.unique(TMQ[lat_start_index: lat_end_index, lon_start_index: lon_end_index])) > 1:
           #Set the relevant parts of the semantic_mask to 1, for TC
-          semantic_mask_TMQ, intersect = binarize(TMQ, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_U850, intersect = binarize(U850, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_UBOT, intersect = binarize(UBOT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_V850, intersect = binarize(V850, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_VBOT, intersect = binarize(VBOT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_QREFHT, intersect = binarize(QREFHT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PS, intersect = binarize(PS, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PSL, intersect = binarize(PSL, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_T200, intersect = binarize(T200, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_T500, intersect = binarize(T500, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PRECT, intersect = binarize(PRECT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_TS, intersect = binarize(TS, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_TREFHT, intersect = binarize(TREFHT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_Z1000, intersect = binarize(Z1000, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_Z200, intersect = binarize(Z200, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_ZBOT, intersect = binarize(ZBOT, semantic_mask_AR, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_TMQ, intersect = binarize(TMQ, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_U850, intersect = binarize(U850, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_UBOT, intersect = binarize(UBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_V850, intersect = binarize(V850, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_VBOT, intersect = binarize(VBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_QREFHT, intersect = binarize(QREFHT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_PS, intersect = binarize(PS, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_PSL, intersect = binarize(PSL, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_T200, intersect = binarize(T200, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_T500, intersect = binarize(T500, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_PRECT, intersect = binarize(PRECT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_TS, intersect = binarize(TS, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_TREFHT, intersect = binarize(TREFHT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_Z1000, intersect = binarize(Z1000, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_Z200, intersect = binarize(Z200, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_ZBOT, intersect = binarize(ZBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
           #intersects.append(intersect)
         
       #The following if condition tests if the flood fill algorithm found any ARs
       if len(instance_masks) > 0:       
         imsave(path_to_labels+"tmq_"+str(ii)+"_"+str(time_step_index)+".png",TMQ)
-        imsave(path_to_labels+"mask_tmq_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TMQ)
+        imsave(path_to_labels+"mask_TMQ_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TMQ)
         imsave(path_to_labels+"mask_u850_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_U850)
         imsave(path_to_labels+"mask_uBOT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_UBOT)
         imsave(path_to_labels+"mask_v850_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_V850)
