@@ -270,6 +270,14 @@ for ii,table_name in enumerate(teca_subtables):
           semantic_mask_Z1000, intersect = binarize(Z1000, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
           semantic_mask_Z200, intersect = binarize(Z200, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
           semantic_mask_ZBOT, intersect = binarize(ZBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #combining channels 
+          tmq_idx = np.where(semantic_mask_TMQ==1)
+          u850_idx = np.where(semantic_mask_U850==1)
+          prect_idx = np.where(semantic_mask_PRECT==1)
+          ts_idx = np.where(semantic_mask_TS==1)
+          concat_idx = np.array([np.concatenate((tmq_idx[0],u850_idx[0],prect_idx[0],ts_idx[0])),np.concatenate((tmq_idx[1],u850_idx[1],prect_idx[1],ts_idx[1]))])
+          semantic_mask_combined = semantic_mask_TMQ.copy()
+          semantic_mask_combined[concat_idx[0],concat_idx[1]] = 1.
           #intersects.append(intersect)
         
       #The following if condition tests if the flood fill algorithm found any ARs
@@ -292,3 +300,4 @@ for ii,table_name in enumerate(teca_subtables):
         imsave(path_to_labels+"mask_Z1000_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_Z1000)
         imsave(path_to_labels+"mask_Z200_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_Z200)
         imsave(path_to_labels+"mask_ZBOT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_ZBOT)
+        imsave(path_to_labels+"mask_combined_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_combined)
