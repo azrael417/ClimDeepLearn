@@ -343,7 +343,6 @@ def main():
             #initialize
             sess.run([init_op, init_local_op])
             #create iterator handles
-            #trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
             sess.run(trn_init_op, feed_dict={handle: trn_handle, trn_feat_placeholder: trn, trn_lab_placeholder: trn_labels})

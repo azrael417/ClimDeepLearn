@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
 from scipy.misc import imsave
+import h5py as h5
 import os
 
 #horovod, yes or no?
@@ -24,7 +25,7 @@ image_width = 1152
 
 
 def conv(x, nf, sz, wd, stride=1): 
-    return tf.layers.conv2d(x, nf, sz, strides=(stride,stride), padding='same',
+    return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride), padding='same',
                             kernel_initializer= tfk.initializers.he_uniform(),
                             bias_initializer=tf.initializers.zeros(),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
@@ -73,7 +74,6 @@ def reverse(a):
 def transition_up(added,wd,training):
     x = tf.concat(added,axis=-1) 
     _, r, c, ch = x.get_shape().as_list()
-    #x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),padding='same',filters=ch,kernel_initializer='he_uniform')
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
 				   padding='same',filters=ch,
 				   kernel_initializer=tfk.initializers.he_uniform(),
@@ -90,16 +90,21 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
 	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
-def create_tiramisu(nb_classes, img_input, nb_dense_block=6, 
+def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
          growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
-#def create_tiramisu(nb_classes, img_input, nb_dense_block=3, 
-        #growth_rate=2, nb_filter=4, nb_layers_per_block=5, p=None, wd=0., training=True):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
     with tf.variable_scope("conv_input") as scope:
+        #init_w = tfk.initializers.he_uniform()
+        #init_b = tf.initializers.zeros()
+        #x = tf.nn.conv2d(input=img_input, 
+        #                filter=tf.Variable(init_w([3,3,nc,nb_filter]),dtype=tf.float32),
+        #                strides=[1, 1, 1, 1],
+        #                padding='SAME')
+        #x = tf.nn.bias_add(x, tf.Variable(init_b(nb_filter),dtype=tf.float32))
         x = conv(img_input, nb_filter, sz=3, wd=wd)
         if p: x = tf.layers.dropout(x, rate=p, training=training)
 
@@ -119,51 +124,73 @@ def create_tiramisu(nb_classes, img_input, nb_dense_block=6,
 
 #Load Data
 def load_data():
-    #random images
-    imgs = np.random.randn(100,image_height,image_width,4).astype(np.float32)
-    #random labels
-    labels = np.random.randint(0,3,[100,image_height,image_width]).astype(np.int32)
+    #images from directory
+    input_path = "/global/cscratch1/sd/amahesh/segm_h5"
     
-    #Load the images and the labels
-    #imgs = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/images.npy").astype(np.float32)
-    #imgs = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/images.npy").astype(np.float32)
-    #print("imgs")
+    #look for labels and data files
+    labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
+    datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
-    #imgs = imgs.reshape([imgs.shape[0],imgs.shape[1],imgs.shape[2],1])
-    #labels = np.load("/global/cscratch1/sd/tkurth/gb2018/tiramisu/small_set/masks.npy").astype(np.int32)
-    #labels = np.load("/home/mudigonda/Data/tiramisu_clipped_combined_v1/masks.npy").astype(np.int32)
-    #print("labels")
-    #labels = np.random.randint(0,3,[100,image_height,image_width]).astype(np.int32)
-    #Image metadata contains year, month, day, time_step, and lat/ lon data for each crop.  
+    #only use the data where we have labels for
+    datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
     
+    #DEBUG
+    datafiles = datafiles[0:1000]
+    labelfiles = labelfiles[0:1000]
+    #DEBUG
+    
+    #convert to numpy
+    datafiles = np.asarray(datafiles)
+    labelfiles = np.asarray(labelfiles)
 
     #PERMUTATION OF DATA
-    #np.random.seed(12345)
-    #shuffle_indices = np.random.permutation(len(imgs))
-    #np.save("./shuffle_indices.npy", shuffle_indices)
-    #imgs = imgs[shuffle_indices]
-    #labels = labels[shuffle_indices]
+    np.random.seed(12345)
+    shuffle_indices = np.random.permutation(len(datafiles))
+    np.save("./shuffle_indices.npy", shuffle_indices)
+    datafiles = datafiles[shuffle_indices]
+    labelfiles = labelfiles[shuffle_indices]
     
     #Create train/validation/test split
-    trn = imgs[:int(0.8*len(imgs))]
-    trn_labels = labels[:int(0.8 * len(labels))]
-    test = imgs[int(0.8*len(imgs)):int(0.9*len(imgs))]
-    test_labels = labels[int(0.8*len(imgs)):int(0.9*len(imgs))]
-    valid = imgs[int(0.9*len(imgs)):]
-    valid_labels = labels[int(0.9*len(imgs)):]
+    size = len(datafiles)
+    trn_data = datafiles[:int(0.8 * size)]
+    trn_labels = labelfiles[:int(0.8 * size)]
+    tst_data = datafiles[int(0.8 * size):int(0.9 * size)]
+    tst_labels = labelfiles[int(0.8 * size):int(0.9 * size)]
+    val_data = datafiles[int(0.9 * size):]
+    val_labels = labelfiles[int(0.9 * size):]
+        
+    return input_path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels
+
+
+class h5_input_reader(object):
     
-    #length of data
-    #rnd_trn = len(trn_labels)
-    #rnd_test = len(test_labels)	
+    def __init__(self, path, channels):
+        self.path = path
+        self.channels = channels
     
-    #Normalize
-    #trn_mean = trn.mean(axis=0)
-    #trn_std = trn.std(axis=0)
-    #trn = (trn - trn_mean)/trn_std
-    #valid = (valid - trn_mean)/trn_std
-    #test = (test - trn_mean)/trn_std
+    def read(self, datafile, labelfile):
+        with h5.File(self.path+'/'+datafile, "r") as f:
+            data = f['climate']['data'][:,:,:,self.channels].astype(np.float32)
+        with h5.File(self.path+'/'+labelfile, "r") as f:
+            label = f['climate']['labels'][...].astype(np.int32)
+        return data,label
+
+
+def create_dataset(basepath, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, channels, shuffle=False):
+    #instantiate input reader
+    h5r = h5_input_reader(basepath, channels)
     
-    return trn, trn_labels, valid, valid_labels, test, test_labels
+    dataset = tf.data.Dataset.from_tensor_slices((datafilelist, labelfilelist))
+    if comm_size>1:
+        dataset = dataset.shard(comm_size, comm_rank)
+    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5r.read, [dataname, labelname], [tf.float32, tf.int32])))
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=10000)
+    dataset = dataset.batch(batchsize)
+    dataset = dataset.repeat(num_epochs)
+    
+    return dataset
+
 
 #main function
 def main():
@@ -180,56 +207,9 @@ def main():
         
     #parameters
     batch = 4
+    channels = [0,1,2,10]
     blocks = [3,3,4,4,7,7,10,10]
     num_epochs = 150
-    #num_epochs = 2
-    
-    #get data
-    training_graph = tf.Graph()
-    print("Loading data...")
-    trn, trn_labels, val, val_labels, tst, tst_labels = load_data()
-    print("done.")
-    
-    with training_graph.as_default():
-        #create datasets
-        #placeholders
-        trn_feat_placeholder = tf.placeholder(trn.dtype, trn.shape, name="train-feature-placeholder")
-        trn_lab_placeholder = tf.placeholder(trn_labels.dtype, trn_labels.shape, name="train-labels-placeholder")
-        val_feat_placeholder = tf.placeholder(val.dtype, val.shape, name="validation-feature-placeholder")
-        val_lab_placeholder = tf.placeholder(val_labels.dtype, val_labels.shape, name="validation-labels-placeholder")
-        tst_feat_placeholder = tf.placeholder(tst.dtype, tst.shape, name="test-feature-placeholder")
-        tst_lab_placeholder = tf.placeholder(tst_labels.dtype, tst_labels.shape, name="test-labels-placeholder")
-        #train dataset
-        trn_dataset = tf.data.Dataset.from_tensor_slices((trn_feat_placeholder, trn_lab_placeholder))
-        if horovod:
-            trn_dataset = trn_dataset.shard(comm_size, comm_rank)
-        trn_dataset = trn_dataset.shuffle(buffer_size=100000)
-        trn_dataset = trn_dataset.repeat(num_epochs)
-        trn_dataset = trn_dataset.batch(batch)
-        #validation dataset
-        val_dataset = tf.data.Dataset.from_tensor_slices((val_feat_placeholder, val_lab_placeholder))
-        if horovod:
-            val_dataset = val_dataset.shard(comm_size, comm_rank)
-        val_dataset = val_dataset.repeat(1)
-        val_dataset = val_dataset.batch(batch)
-        #test dataset
-        tst_dataset = tf.data.Dataset.from_tensor_slices((tst_feat_placeholder, tst_lab_placeholder))
-        tst_dataset = tst_dataset.repeat(1)
-        tst_dataset = tst_dataset.batch(batch)
-        #create feedable iterator
-        handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, trn_dataset.output_types, trn_dataset.output_shapes)
-        next_elem = iterator.get_next()
-        #create init handles
-        #tst
-        trn_iterator = trn_dataset.make_initializable_iterator()
-        trn_handle_string = trn_iterator.string_handle()
-        trn_init_op = iterator.make_initializer(trn_dataset)
-        #val
-        val_iterator = val_dataset.make_initializable_iterator()
-        val_handle_string = val_iterator.string_handle()
-        val_init_op = iterator.make_initializer(val_dataset)
-    
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2,
@@ -237,14 +217,38 @@ def main():
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
-
-
-    #create graph
+    
+    #get data
+    training_graph = tf.Graph()
+    print("Loading data...")
+    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
+    print("done.")
+    
     with training_graph.as_default():
+        #create datasets
+        trn_dataset = create_dataset(path, trn_data, trn_labels, batch, num_epochs, comm_size, comm_rank, channels, True)
+        val_dataset = create_dataset(path, val_data, val_labels, batch, 1, comm_size, comm_rank, channels)
+        
+        #create iterators
+        handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
+        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32), 
+                                                       ((batch, image_height, image_width, len(channels)), 
+                                                       (batch, image_height, image_width))
+                                                       )
+        next_elem = iterator.get_next()
+        
+        #create init handles
+        #trn
+        trn_iterator = trn_dataset.make_initializable_iterator()
+        trn_handle_string = trn_iterator.string_handle()
+        trn_init_op = iterator.make_initializer(trn_dataset)
+        #val
+        val_iterator = val_dataset.make_initializable_iterator()
+        val_handle_string = val_iterator.string_handle()
+        val_init_op = iterator.make_initializer(val_dataset)
+
         #set up model
-        #images = tf.placeholder(tf.float32, [None, trn.shape[1], trn.shape[2], 1])
-        #labels = tf.placeholder(tf.int32, [None, trn.shape[1], trn.shape[2], 1])
-        logit, prediction = create_tiramisu(3, next_elem[0], nb_layers_per_block=blocks, p=0.2, wd=1e-4)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
@@ -257,7 +261,7 @@ def main():
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
-        num_samples = trn.shape[0] // comm_size
+        num_samples = trn_data.shape[0] // comm_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
         
@@ -302,91 +306,91 @@ def main():
         
 
         #start session
-        trn_handle_string = trn_iterator.string_handle()
-        val_handle_string = val_iterator.string_handle()
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
             #create iterator handles
-            #trn_handle, val_handle = sess.run([trn_iterator.string_handle(), val_iterator.string_handle()])
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
-            sess.run(trn_init_op, feed_dict={handle: trn_handle, trn_feat_placeholder: trn, trn_lab_placeholder: trn_labels})
-            sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
+            sess.run(trn_init_op, feed_dict={handle: trn_handle})
+            sess.run(val_init_op, feed_dict={handle: val_handle})
 
-            #do the training
-            epoch = 1
-            train_loss = 0.
-            while not sess.should_stop():
-                
-                #training loop
-                try:
-                    #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
-                    train_steps_in_epoch = train_steps%num_steps_per_epoch
-                    train_loss += tmp_loss
-                    
-                    if train_steps_in_epoch > 0:
-                        #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
-                    else:
-                        #print epoch report
-                        train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
-                        iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
-                        
-                        #evaluation loop
-                        eval_loss = 0.
-                        eval_steps = 0
-                        while True:
-                            try:
-                                #construct feed dict
-                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                eval_loss += tmp_loss
-                                eval_steps += 1
-                            except tf.errors.OutOfRangeError:
-                                eval_loss /= eval_steps
-                                print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
-                                iou_score = sess.run(iou_op)
-                                print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-                                sess.run(val_init_op, feed_dict={handle: val_handle, val_feat_placeholder: val, val_lab_placeholder: val_labels})
-                                break
-                                
-                        #reset counters
-                        epoch += 1
-                        train_loss = 0.
-                    
-                except tf.errors.OutOfRangeError:
-                    break
+            out = sess.run(next_elem, feed_dict={handle: trn_handle})
+            print(out)
 
-        #test only on rank 0
-        #if hvd.rank() == 0:
-        #    with tf.Session(config=sess_config) as sess:
-        #        #init eval
-        #        eval_steps = 0
-        #        eval_loss = 0.
-        #        #init iterator and variables
-        #        sess.run([init_op, init_local_op])
-        #        tst_handle = sess.run(tst_handle_string)
-        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
-        #        
-        #        #start evaluation
-        #        while True:
-        #            try:
-        #                #construct feed dict
-        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
-        #                test_loss += tmp_loss
-        #                test_steps += 1
-        #            except tf.errors.OutOfRangeError:
-        #                test_loss /= test_steps
-        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
-        #                iou_score = sess.run([iou_op])
-        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
+#            #do the training
+#            epoch = 1
+#            train_loss = 0.
+#            while not sess.should_stop():
+#                
+#                #training loop
+#                try:
+#                    #construct feed dict
+#                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+#                    train_steps_in_epoch = train_steps%num_steps_per_epoch
+#                    train_loss += tmp_loss
+#                    
+#                    if train_steps_in_epoch > 0:
+#                        #print step report
+#                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
+#                    else:
+#                        #print epoch report
+#                        train_loss /= num_steps_per_epoch
+#                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
+#                        iou_score = sess.run(iou_op)
+#                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+#                        
+#                        #evaluation loop
+#                        eval_loss = 0.
+#                        eval_steps = 0
+#                        while True:
+#                            try:
+#                                #construct feed dict
+#                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
+#                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+#                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+#                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+#                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+#                                eval_loss += tmp_loss
+#                                eval_steps += 1
+#                            except tf.errors.OutOfRangeError:
+#                                eval_loss /= eval_steps
+#                                print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
+#                                iou_score = sess.run(iou_op)
+#                                print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
+#                                sess.run(val_init_op, feed_dict={handle: val_handle})
+#                                break
+#                                
+#                        #reset counters
+#                        epoch += 1
+#                        train_loss = 0.
+#                    
+#                except tf.errors.OutOfRangeError:
+#                    break
+#
+#        #test only on rank 0
+#        #if hvd.rank() == 0:
+#        #    with tf.Session(config=sess_config) as sess:
+#        #        #init eval
+#        #        eval_steps = 0
+#        #        eval_loss = 0.
+#        #        #init iterator and variables
+#        #        sess.run([init_op, init_local_op])
+#        #        tst_handle = sess.run(tst_handle_string)
+#        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
+#        #        
+#        #        #start evaluation
+#        #        while True:
+#        #            try:
+#        #                #construct feed dict
+#        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
+#        #                test_loss += tmp_loss
+#        #                test_steps += 1
+#        #            except tf.errors.OutOfRangeError:
+#        #                test_loss /= test_steps
+#        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
+#        #                iou_score = sess.run([iou_op])
+#        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
     main()
