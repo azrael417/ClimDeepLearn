@@ -345,19 +345,23 @@ for ii,table_name in enumerate(teca_subtables):
         
         save_labels = semantic_mask_combined
         print("SAVE LABELS" + str(save_labels.shape))
-        save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined)])
-        save_labels_stats = save_labels_stats.reshape((4,1))
-        
-        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_std/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        background_class = np.sum(semantic_mask==0)/(768*1152.0)
+        tc_class = np.sum(semantic_mask_combined==1)/(768*1152.0)
+        ar_class = np.sum(semantic_mask_combined==2)/(768*1152.0)
+        save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined),background_class, tc_class, ar_class])
+        save_labels_stats = save_labels_stats.reshape((7,1))
+        print(save_labels_stats)
+
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
         grp = f.create_group("climate")
         grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
         grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
         f.close()
 
-        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_std/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
         grp = f.create_group("climate")
         grp.create_dataset("labels",(768,1152),dtype="f",data=save_labels)
-        grp.create_dataset("labels_stats",(4,1),dtype="f",data=save_labels_stats)
+        grp.create_dataset("labels_stats",(7,1),dtype="f",data=save_labels_stats)
         f.close()  
 
         #plot_mask(lons, lats, save_data[:,:,0], save_labels,
