@@ -16,6 +16,7 @@ import glob
 import os
 import floodfillsearch.floodFillSearch as flood
 from scipy.misc import imsave
+import h5py
 
 from mpi4py import MPI
 
@@ -96,6 +97,20 @@ def get_num_AR_instances(U850, V850, QREFHT, time_step, instance_masks, instance
       num_instances+=1
   return num_instances
 
+def filter_isolated_cells(array, struct):
+      """ Return array with completely isolated single cells removed                                                                     
+      :param array: Array with completely isolated single cells                                                                          
+        :param struct: Structure array for generating unique regions                                                                     
+      :return: Array with minimum region size < max_size                                                                                 
+      """
+      filtered_array = np.copy(array)
+      id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
+      id_sizes = np.array(ndimage.sum(array, id_regions, range(num_ids + 1)))
+      area_mask = (id_sizes < np.amax(id_sizes))
+      filtered_array[area_mask[id_regions]] = 0
+      id_regions, num_ids = ndimage.label(filtered_array, structure=struct)
+      return filtered_array
+
 #------- Binarize tropical cyclone regions -------------#
 def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
   im_slice = img_array[lat_start: lat_end, lon_start: lon_end]
@@ -106,7 +121,7 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
   #Find the Otsu threshold of the image slice
   otsu_thresh = threshold_otsu(im_slice)
   #binary_adaptive = im_slice > otsu_thresh
-  binary_adaptive = im_slice > np.percentile(im_slice, 80)
+  binary_adaptive = im_slice > np.percentile(im_slice, 93)
   #Find the largest contiguous region of areas above the otsu threshold
   def filter_isolated_cells(array, struct):
       """ Return array with completely isolated single cells removed
@@ -139,14 +154,14 @@ def find_nearest(array,value):
     idx = (np.abs(array-value)).argmin()
     return idx
 
-def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
-        year, month, day, time_step_index):
+def plot_mask(lons, lats, img_array, storm_mask,
+              year, month, day, time_step_index, run_num):
   my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=np.median(lons),
                   llcrnrlon=min(lons), urcrnrlat=max(lats), urcrnrlon=max(lons), resolution = 'c')
  
   xx, yy = np.meshgrid(lons, lats)
   x_map,y_map = my_map(xx,yy)
-  x_plot, y_plot = my_map(storm_lon, storm_lat)
+  #x_plot, y_plot = my_map(storm_lon, storm_lat)
   my_map.drawcoastlines(color="black")
   my_map.contourf(x_map,y_map,img_array,64,cmap='viridis')
   #my_map.plot(x_plot, y_plot, 'r*', color = "red")
@@ -158,14 +173,14 @@ def plot_mask(lons, lats, img_array, storm_mask, storm_lon, storm_lat,
   cbar.ax.set_ylabel('TMQ kg $m^{-2}$')
 
   mask_ex = plt.gcf()
-  mask_ex.savefig("./plots_for_clipping/combined_mask+3{:04d}-{:02d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index, progress_counter))
+  mask_ex.savefig("/global/cscratch1/sd/amahesh/segm_plots/combined_mask+{:04d}-{:02d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index, run_num))
   plt.clf()
 
 print("before loading teca_subtables")
 
 #The TECA subtables are csv versions of the TECA output table (one subtable for each day that TECA was run) 
 #The original TECA output table is in .bin format and in Karthik's scratch.
-path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables/*.csv"
+path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables_HAPPI20/*.csv"
 
 teca_subtables = np.asarray([os.path.basename(x) for x in glob.glob(path_to_subtables)])
 shuffle_indices = np.random.permutation(len(teca_subtables)) 
@@ -174,8 +189,8 @@ teca_subtables = teca_subtables[shuffle_indices]
 print("loaded in teca_subtables")
 
 #path_to_labels = "/global/cscratch1/sd/mayur/segm_labels/"
-path_to_labels = "/global/cscratch1/sd/amahesh/segm_labels/"
-path_to_CAM5_files = "/global/cscratch1/sd/mwehner/CAM5-1-0.25degree_All-Hist_est1_v3_run2/run/h2/CAM5-1-0.25degree_All-Hist_est1_v3_run2.cam.h2."
+#path_to_labels = "/global/cscratch1/sd/amahesh/segm_h5_std/"
+#path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run" +str(run_num) + "/h2/fvCAM5_HAPPI20_run" + str(run_num) + ".cam.h2."
 
 progress_counter = 0
 
@@ -188,14 +203,16 @@ for ii,table_name in enumerate(teca_subtables):
   year = int(table_name[12:16])
   month = int(table_name[17:19])
   day = int(table_name[20:22])
-
+  run_num = int(table_name[-5:-4])
+  
+  path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run" +str(run_num) + "/h2/fvCAM5_HAPPI20_run" + str(run_num) + ".cam.h2."
   id_string = "{:04d}{:02d}{:02d}".format(year,month,day)
 
   curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
 
   #Add 4 to the tropical cyclone radii (so that the radii aren't too small)
   #curr_table['r0'] = curr_table['r0'][:] + 4
-  curr_table['r0'] = curr_table['r0'][:] + 4.25
+  curr_table['r0'] = curr_table['r0'][:] + 6.6
 
   #time_step_index refers to the 8 snapshots of data available for each data.
   for time_step_index in range(8):
@@ -220,6 +237,7 @@ for ii,table_name in enumerate(teca_subtables):
       ZBOT = fin.variables['ZBOT'][:][time_step_index]
       UBOT = fin.variables['UBOT'][:][time_step_index]
       VBOT = fin.variables['VBOT'][:][time_step_index]
+      
       #U850 = np.expand_dims(U850, axis=0)
       #V850 = np.expand_dims(V850, axis=0)
       #QREFHT = np.expand_dims(QREFHT, axis=0)
@@ -235,6 +253,26 @@ for ii,table_name in enumerate(teca_subtables):
     intersects =[]
     #Set the semantic mask to 0 where there are AR pixels
     semantic_mask_AR = get_AR_semantic_mask(np.expand_dims(U850,axis=0), np.expand_dims(V850,axis=0), np.expand_dims(QREFHT,axis=0),time_step_index, semantic_mask)
+    
+    #initialize the TC binarization masks
+    semantic_mask_TMQ = semantic_mask_AR.copy()
+    semantic_mask_U850 = semantic_mask_AR.copy()
+    #semantic_mask_UBOT = semantic_mask_AR.copy()
+    semantic_mask_V850 = semantic_mask_AR.copy()
+    # semantic_mask_VBOT = semantic_mask_AR.copy()
+    # semantic_mask_QREFHT = semantic_mask_AR.copy()
+    # semantic_mask_PS = semantic_mask_AR.copy()
+    # semantic_mask_PSL = semantic_mask_AR.copy()
+    # semantic_mask_T200 = semantic_mask_AR.copy()
+    # semantic_mask_T500 = semantic_mask_AR.copy()
+    semantic_mask_PRECT = semantic_mask_AR.copy()
+    # semantic_mask_TS = semantic_mask_AR.copy()
+    # semantic_mask_TREFHT = semantic_mask_AR.copy()
+    # semantic_mask_Z1000 = semantic_mask_AR.copy()
+    # semantic_mask_Z200 = semantic_mask_AR.copy()
+    # semantic_mask_PS = semantic_mask_AR.copy()
+    # semantic_mask_ZBOT = semantic_mask_AR.copy()
+
     num_instances = 0
     #Note: the following method will append one mask for each AR instance to "instance_masks."  This feature
     #will be useful for instance segmentation in the future. For ECCV, we are only doing semantic segmentation.
@@ -254,50 +292,73 @@ for ii,table_name in enumerate(teca_subtables):
 
         if len(np.unique(TMQ[lat_start_index: lat_end_index, lon_start_index: lon_end_index])) > 1:
           #Set the relevant parts of the semantic_mask to 1, for TC
-          semantic_mask_TMQ, intersect = binarize(TMQ, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_U850, intersect = binarize(U850, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_UBOT, intersect = binarize(UBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_V850, intersect = binarize(V850, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_VBOT, intersect = binarize(VBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_QREFHT, intersect = binarize(QREFHT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PS, intersect = binarize(PS, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PSL, intersect = binarize(PSL, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_T200, intersect = binarize(T200, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_T500, intersect = binarize(T500, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_PRECT, intersect = binarize(PRECT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_TS, intersect = binarize(TS, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_TREFHT, intersect = binarize(TREFHT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_Z1000, intersect = binarize(Z1000, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_Z200, intersect = binarize(Z200, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
-          semantic_mask_ZBOT, intersect = binarize(ZBOT, semantic_mask_AR.copy(), lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_TMQ, intersect = binarize(TMQ, semantic_mask_TMQ, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_U850, intersect = binarize(U850, semantic_mask_U850, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #semantic_mask_UBOT, intersect = binarize(UBOT, semantic_mask_UBOT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_V850, intersect = binarize(V850, semantic_mask_V850, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #semantic_mask_VBOT, intersect = binarize(VBOT, semantic_mask_VBOT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #semantic_mask_QREFHT, intersect = binarize(QREFHT, semantic_mask_QREFHT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #semantic_mask_PS, intersect = binarize(PS, semantic_mask_PS, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          #semantic_mask_PSL, intersect = binarize(PSL, semantic_mask_PSL, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_T200, intersect = binarize(T200, semantic_mask_T200, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_T500, intersect = binarize(T500, semantic_mask_T500, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          semantic_mask_PRECT, intersect = binarize(PRECT, semantic_mask_PRECT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_TS, intersect = binarize(TS, semantic_mask_TS, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_TREFHT, intersect = binarize(TREFHT, semantic_mask_TREFHT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_Z1000, intersect = binarize(Z1000, semantic_mask_Z1000, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_Z200, intersect = binarize(Z200, semantic_mask_Z200, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
+          # semantic_mask_ZBOT, intersect = binarize(ZBOT, semantic_mask_ZBOT, lat_end_index, lat_start_index, lon_end_index, lon_start_index)
           #combining channels 
           tmq_idx = np.where(semantic_mask_TMQ==1)
           u850_idx = np.where(semantic_mask_U850==1)
           prect_idx = np.where(semantic_mask_PRECT==1)
-          ts_idx = np.where(semantic_mask_TS==1)
-          concat_idx = np.array([np.concatenate((tmq_idx[0],u850_idx[0],prect_idx[0],ts_idx[0])),np.concatenate((tmq_idx[1],u850_idx[1],prect_idx[1],ts_idx[1]))])
+          v850_idx = np.where(semantic_mask_V850==1)
+          # qrefht_idx = np.where(semantic_mask_QREFHT==1)
+          # t500_idx = np.where(semantic_mask_T500==1)
+          # t200_idx = np.where(semantic_mask_T200==1)
+          # ubot_idx = np.where(semantic_mask_UBOT==1)
+          # vbot_idx = np.where(semantic_mask_VBOT==1)
+          # trefht_idx = np.where(semantic_mask_TREFHT==1)
+
+          #Make labels such that there are no disjoint regions and AR labels in the TC bounding box are not set to 0
+          concat_idx = np.array([np.concatenate((tmq_idx[0],u850_idx[0],prect_idx[0],v850_idx[0])),np.concatenate((tmq_idx[1],u850_idx[1],prect_idx[1],v850_idx[1]))])
           semantic_mask_combined = semantic_mask_TMQ.copy()
-          semantic_mask_combined[concat_idx[0],concat_idx[1]] = 1.
-          #intersects.append(intersect)
+          #semantic_mask_combined[concat_idx[0],concat_idx[1]] = 1.
+
+          temp = np.zeros((768,1152))
+          temp[concat_idx[0],concat_idx[1]] = 1
+          temp = filter_isolated_cells(temp[lat_start_index: lat_end_index, lon_start_index: lon_end_index], struct=np.ones((3,3)))
+
+          semantic_mask_combined[lat_start_index: lat_end_index, lon_start_index: lon_end_index][np.where(temp == 1)] = 1
         
       #The following if condition tests if the flood fill algorithm found any ARs
       if len(instance_masks) > 0:
         print('now saving')
-        imsave(path_to_labels+"tmq_"+str(ii)+"_"+str(time_step_index)+".png",TMQ)
-        imsave(path_to_labels+"mask_TMQ_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TMQ)
-        imsave(path_to_labels+"mask_u850_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_U850)
-        imsave(path_to_labels+"mask_uBOT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_UBOT)
-        imsave(path_to_labels+"mask_v850_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_V850)
-        imsave(path_to_labels+"mask_vBOT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_VBOT)
-        imsave(path_to_labels+"mask_QREFHT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_QREFHT)
-        imsave(path_to_labels+"mask_PS_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_PS)
-        imsave(path_to_labels+"mask_PSL_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_PSL)
-        imsave(path_to_labels+"mask_T200_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_T200)
-        imsave(path_to_labels+"mask_T500_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_T500)
-        imsave(path_to_labels+"mask_PRECT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_PRECT)
-        imsave(path_to_labels+"mask_TS_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TS)
-        imsave(path_to_labels+"mask_TREFHT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_TREFHT)
-        imsave(path_to_labels+"mask_Z1000_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_Z1000)
-        imsave(path_to_labels+"mask_Z200_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_Z200)
-        imsave(path_to_labels+"mask_ZBOT_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_ZBOT)
-        imsave(path_to_labels+"mask_combined_"+str(ii)+"_"+str(time_step_index)+".png",semantic_mask_combined)
+
+        channel_list = [TMQ, U850, V850, UBOT, VBOT, QREFHT, PS, PSL, T200, T500, PRECT, TS, TREFHT, Z1000, Z200, ZBOT]
+
+        save_data = np.stack(channel_list, axis=-1)
+        print(save_data.shape)
+        save_data_stats = np.zeros((4,16))
+        for channel_index, channel in enumerate(channel_list):
+          save_data_stats[:,channel_index] = np.asarray([np.mean(channel), np.max(channel), np.min(channel),np.std(channel)])
+        
+        save_labels = semantic_mask_combined
+        print("SAVE LABELS" + str(save_labels.shape))
+        save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined)])
+        save_labels_stats = save_labels_stats.reshape((4,1))
+        
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_std/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        grp = f.create_group("climate")
+        grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
+        grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
+        f.close()
+
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_std/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        grp = f.create_group("climate")
+        grp.create_dataset("labels",(768,1152),dtype="f",data=save_labels)
+        grp.create_dataset("labels_stats",(4,1),dtype="f",data=save_labels_stats)
+        f.close()  
+
+        #plot_mask(lons, lats, save_data[:,:,0], save_labels,
+        #      year, month, day, time_step_index, run_num)
