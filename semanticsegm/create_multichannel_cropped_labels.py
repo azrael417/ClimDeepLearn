@@ -21,7 +21,7 @@ import h5py
 from mpi4py import MPI
 
 
-print("finished importing")
+#print("finished importing")
 
 #UNCOMMENT THE FOLLOWING 2 LINES IF YOU WANT TO RUN IN PARALLEL
 rank = MPI.COMM_WORLD.Get_rank()
@@ -176,17 +176,17 @@ def plot_mask(lons, lats, img_array, storm_mask,
   mask_ex.savefig("/global/cscratch1/sd/amahesh/segm_plots/combined_mask+{:04d}-{:02d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index, run_num))
   plt.clf()
 
-print("before loading teca_subtables")
+#print("before loading teca_subtables")
 
 #The TECA subtables are csv versions of the TECA output table (one subtable for each day that TECA was run) 
 #The original TECA output table is in .bin format and in Karthik's scratch.
-path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables_HAPPI20/*.csv"
+path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables_HAPPI15/*.csv"
 
 teca_subtables = np.asarray([os.path.basename(x) for x in glob.glob(path_to_subtables)])
 shuffle_indices = np.random.permutation(len(teca_subtables)) 
 np.save("./shuffle_indices_glob_files.npy", shuffle_indices)
 teca_subtables = teca_subtables[shuffle_indices]
-print("loaded in teca_subtables")
+#print("loaded in teca_subtables")
 
 #path_to_labels = "/global/cscratch1/sd/mayur/segm_labels/"
 #path_to_labels = "/global/cscratch1/sd/amahesh/segm_h5_std/"
@@ -195,17 +195,17 @@ print("loaded in teca_subtables")
 progress_counter = 0
 
 for ii,table_name in enumerate(teca_subtables):
-  print("I index: " + str(ii))
+  #print("I index: " + str(ii))
   #UNCOMMENT THE FOLLOWING LINE IF YOU WANT TO RUN IN PARALLEL
   if ii % size != rank: continue
-  print(str(rank))
+  #print(str(rank))
 
   year = int(table_name[12:16])
   month = int(table_name[17:19])
   day = int(table_name[20:22])
   run_num = int(table_name[-5:-4])
   
-  path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run" +str(run_num) + "/h2/fvCAM5_HAPPI20_run" + str(run_num) + ".cam.h2."
+  path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI15_run" +str(run_num) + "/h2/fvCAM5_HAPPI15_run" + str(run_num) + ".cam.h2."
   id_string = "{:04d}{:02d}{:02d}".format(year,month,day)
 
   curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
@@ -244,7 +244,7 @@ for ii,table_name in enumerate(teca_subtables):
 
     #The semantic mask is one mask with 1's for TCs, 2's for ARs, and 0's everywhere else
     semantic_mask = np.zeros((image_height, image_width))
-    print("loaded in variables")
+    #print("loaded in variables")
     #For instance segmentation, there are N masks, where N = number of instances.  Each mask is an array of size height, width
     instance_masks = []
     #For instance segmentation, the ground truth boxes surrounding the storm are also stored.  They are in the format of (N, 5) --> (x1, y1, x2, y2, classid)
@@ -280,7 +280,7 @@ for ii,table_name in enumerate(teca_subtables):
     #print("got AR masks")
     #time_step_index*3 yields 0,3,6,9,12,15,18,or21
     curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
-    print("LENCURRTABLETIME: " + str(len(curr_table_time)))
+    #print("LENCURRTABLETIME: " + str(len(curr_table_time)))
     if len(curr_table_time) > 0:
       num_instances += len(curr_table_time)
       for index, row in curr_table_time.iterrows():
@@ -333,24 +333,24 @@ for ii,table_name in enumerate(teca_subtables):
         
       #The following if condition tests if the flood fill algorithm found any ARs
       if len(instance_masks) > 0:
-        print('now saving')
+        #print('now saving')
 
         channel_list = [TMQ, U850, V850, UBOT, VBOT, QREFHT, PS, PSL, T200, T500, PRECT, TS, TREFHT, Z1000, Z200, ZBOT]
 
         save_data = np.stack(channel_list, axis=-1)
-        print(save_data.shape)
+        #print(save_data.shape)
         save_data_stats = np.zeros((4,16))
         for channel_index, channel in enumerate(channel_list):
           save_data_stats[:,channel_index] = np.asarray([np.mean(channel), np.max(channel), np.min(channel),np.std(channel)])
         
         save_labels = semantic_mask_combined
-        print("SAVE LABELS" + str(save_labels.shape))
+        #print("SAVE LABELS" + str(save_labels.shape))
         background_class = np.sum(semantic_mask==0)/(768*1152.0)
         tc_class = np.sum(semantic_mask_combined==1)/(768*1152.0)
         ar_class = np.sum(semantic_mask_combined==2)/(768*1152.0)
         save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined),background_class, tc_class, ar_class])
         save_labels_stats = save_labels_stats.reshape((7,1))
-        print(save_labels_stats)
+        #print(save_labels_stats)
 
         f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
         grp = f.create_group("climate")
@@ -366,3 +366,4 @@ for ii,table_name in enumerate(teca_subtables):
 
         #plot_mask(lons, lats, save_data[:,:,0], save_labels,
         #      year, month, day, time_step_index, run_num)
+print("finished")
