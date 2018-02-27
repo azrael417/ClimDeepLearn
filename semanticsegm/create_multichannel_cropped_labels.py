@@ -1,4 +1,4 @@
-import matplotlib as mpl
+1;95;0cimport matplotlib as mpl
 mpl.use('agg')
 import matplotlib.pyplot as plt
 
@@ -205,7 +205,7 @@ for ii,table_name in enumerate(teca_subtables):
   day = int(table_name[20:22])
   run_num = int(table_name[-5:-4])
   
-  path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI15_run" +str(run_num) + "/h2/fvCAM5_HAPPI15_run" + str(run_num) + ".cam.h2."
+  path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run" +str(run_num) + "/h2/fvCAM5_HAPPI15_run" + str(run_num) + ".cam.h2."
   id_string = "{:04d}{:02d}{:02d}".format(year,month,day)
 
   curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
@@ -352,13 +352,13 @@ for ii,table_name in enumerate(teca_subtables):
         save_labels_stats = save_labels_stats.reshape((7,1))
         #print(save_labels_stats)
 
-        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
         grp = f.create_group("climate")
         grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
         grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
         f.close()
 
-        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+        f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
         grp = f.create_group("climate")
         grp.create_dataset("labels",(768,1152),dtype="f",data=save_labels)
         grp.create_dataset("labels_stats",(7,1),dtype="f",data=save_labels_stats)
