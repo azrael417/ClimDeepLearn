@@ -125,7 +125,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
 #Load Data
 def load_data():
     #images from directory
-    input_path = "/global/cscratch1/sd/amahesh/segm_h5"
+    input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
@@ -133,11 +133,6 @@ def load_data():
     
     #only use the data where we have labels for
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
-    
-    #DEBUG
-    datafiles = datafiles[0:1000]
-    labelfiles = labelfiles[0:1000]
-    #DEBUG
     
     #convert to numpy
     datafiles = np.asarray(datafiles)
@@ -168,12 +163,24 @@ class h5_input_reader(object):
         self.path = path
         self.channels = channels
     
+    
     def read(self, datafile, labelfile):
+        
+        print(datafile)
+        
+        #set shape to none in the beginning
+        shape = None
+        
+        #data
         with h5.File(self.path+'/'+datafile, "r") as f:
-            data = f['climate']['data'][:,:,:,self.channels].astype(np.float32)
+            shape = f['climate']['data'].shape
+            data = np.expand_dims(f['climate']['data'][:,:,self.channels].astype(np.float32), axis=0)
+        
+        #label
         with h5.File(self.path+'/'+labelfile, "r") as f:
-            label = f['climate']['labels'][...].astype(np.int32)
-        return data,label
+            label = np.expand_dims(f['climate']['labels'][...].astype(np.int32), axis=0)
+        
+        return data, label
 
 
 def create_dataset(basepath, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, channels, shuffle=False):
@@ -226,8 +233,10 @@ def main():
     
     with training_graph.as_default():
         #create datasets
-        trn_dataset = create_dataset(path, trn_data, trn_labels, batch, num_epochs, comm_size, comm_rank, channels, True)
-        val_dataset = create_dataset(path, val_data, val_labels, batch, 1, comm_size, comm_rank, channels)
+        datafiles = tf.placeholder(tf.string, shape=[None])
+        labelfiles = tf.placeholder(tf.string, shape=[None])
+        trn_dataset = create_dataset(path, datafiles, labelfiles, batch, num_epochs, comm_size, comm_rank, channels, True)
+        val_dataset = create_dataset(path, datafiles, labelfiles, batch, 1, comm_size, comm_rank, channels)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
@@ -312,85 +321,82 @@ def main():
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
-            sess.run(trn_init_op, feed_dict={handle: trn_handle})
-            sess.run(val_init_op, feed_dict={handle: val_handle})
+            sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
+            sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
 
-            out = sess.run(next_elem, feed_dict={handle: trn_handle})
-            print(out)
+            #do the training
+            epoch = 1
+            train_loss = 0.
+            while not sess.should_stop():
+                
+                #training loop
+                try:
+                    #construct feed dict
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    train_steps_in_epoch = train_steps%num_steps_per_epoch
+                    train_loss += tmp_loss
+                    
+                    if train_steps_in_epoch > 0:
+                        #print step report
+                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
+                    else:
+                        #print epoch report
+                        train_loss /= num_steps_per_epoch
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
+                        iou_score = sess.run(iou_op)
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                        
+                        #evaluation loop
+                        eval_loss = 0.
+                        eval_steps = 0
+                        while True:
+                            try:
+                                #construct feed dict
+                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
+                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                eval_loss += tmp_loss
+                                eval_steps += 1
+                            except tf.errors.OutOfRangeError:
+                                eval_loss /= eval_steps
+                                print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
+                                iou_score = sess.run(iou_op)
+                                print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
+                                sess.run(val_init_op, feed_dict={handle: val_handle})
+                                break
+                                
+                        #reset counters
+                        epoch += 1
+                        train_loss = 0.
+                    
+                except tf.errors.OutOfRangeError:
+                    break
 
-#            #do the training
-#            epoch = 1
-#            train_loss = 0.
-#            while not sess.should_stop():
-#                
-#                #training loop
-#                try:
-#                    #construct feed dict
-#                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
-#                    train_steps_in_epoch = train_steps%num_steps_per_epoch
-#                    train_loss += tmp_loss
-#                    
-#                    if train_steps_in_epoch > 0:
-#                        #print step report
-#                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
-#                    else:
-#                        #print epoch report
-#                        train_loss /= num_steps_per_epoch
-#                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
-#                        iou_score = sess.run(iou_op)
-#                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
-#                        
-#                        #evaluation loop
-#                        eval_loss = 0.
-#                        eval_steps = 0
-#                        while True:
-#                            try:
-#                                #construct feed dict
-#                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-#                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-#                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-#                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-#                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-#                                eval_loss += tmp_loss
-#                                eval_steps += 1
-#                            except tf.errors.OutOfRangeError:
-#                                eval_loss /= eval_steps
-#                                print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
-#                                iou_score = sess.run(iou_op)
-#                                print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-#                                sess.run(val_init_op, feed_dict={handle: val_handle})
-#                                break
-#                                
-#                        #reset counters
-#                        epoch += 1
-#                        train_loss = 0.
-#                    
-#                except tf.errors.OutOfRangeError:
-#                    break
-#
-#        #test only on rank 0
-#        #if hvd.rank() == 0:
-#        #    with tf.Session(config=sess_config) as sess:
-#        #        #init eval
-#        #        eval_steps = 0
-#        #        eval_loss = 0.
-#        #        #init iterator and variables
-#        #        sess.run([init_op, init_local_op])
-#        #        tst_handle = sess.run(tst_handle_string)
-#        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
-#        #        
-#        #        #start evaluation
-#        #        while True:
-#        #            try:
-#        #                #construct feed dict
-#        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
-#        #                test_loss += tmp_loss
-#        #                test_steps += 1
-#        #            except tf.errors.OutOfRangeError:
-#        #                test_loss /= test_steps
-#        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
-#        #                iou_score = sess.run([iou_op])
-#        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
+        #test only on rank 0
+        #if hvd.rank() == 0:
+        #    with tf.Session(config=sess_config) as sess:
+        #        #init eval
+        #        eval_steps = 0
+        #        eval_loss = 0.
+        #        #init iterator and variables
+        #        sess.run([init_op, init_local_op])
+        #        tst_handle = sess.run(tst_handle_string)
+        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
+        #        
+        #        #start evaluation
+        #        while True:
+        #            try:
+        #                #construct feed dict
+        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
+        #                test_loss += tmp_loss
+        #                test_steps += 1
+        #            except tf.errors.OutOfRangeError:
+        #                test_loss /= test_steps
+        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
+        #                iou_score = sess.run([iou_op])
+        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
     main()
