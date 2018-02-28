@@ -9,12 +9,14 @@ except:
     
 import h5py as h5
 import os
+import time
 
 #horovod, yes or no?
 horovod=True
 try:
     import horovod.tensorflow as hvd
-    print("Enabling Horovod Support")
+    if hvd.rank() == 0:
+        print("Enabling Horovod Support")
 except:
     horovod = False
     print("Disabling Horovod Support")
@@ -222,7 +224,8 @@ def main():
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
-        print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
+        if comm_rank == 0:
+            print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
     #parameters
     batch = 1
@@ -239,9 +242,11 @@ def main():
     
     #get data
     training_graph = tf.Graph()
-    print("Loading data...")
+    if comm_rank == 0:
+        print("Loading data...")
     path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
-    print("done.")
+    if comm_rank == 0:
+        print("done.")
     
     with training_graph.as_default():
         #create datasets
@@ -341,6 +346,7 @@ def main():
             #do the training
             epoch = 1
             train_loss = 0.
+            start_time = time.time()
             while not sess.should_stop():
                 
                 #training loop
@@ -354,11 +360,13 @@ def main():
                         #print step report
                         print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
                     else:
+                        end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
                         iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
+                        start_time = time.time()
                         
                         #evaluation loop
                         eval_loss = 0.
