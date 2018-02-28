@@ -345,8 +345,7 @@ def main():
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss, batch = sess.run([train_op, iou_update_op, global_step, loss, next_elem[0]], feed_dict={handle: trn_handle})
-                    print(batch, trn_reader.minvals, trn_reader.maxvals)
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     
