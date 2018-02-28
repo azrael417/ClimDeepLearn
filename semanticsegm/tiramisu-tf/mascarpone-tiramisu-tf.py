@@ -9,12 +9,14 @@ except:
     
 import h5py as h5
 import os
+import time
 
 #horovod, yes or no?
 horovod=True
 try:
     import horovod.tensorflow as hvd
-    print("Enabling Horovod Support")
+    if hvd.rank() == 0:
+        print("Enabling Horovod Support")
 except:
     horovod = False
     print("Disabling Horovod Support")
@@ -221,7 +223,8 @@ def main():
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
-        print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
+        if comm_rank == 0:
+            print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
     #parameters
     batch = 1
@@ -238,9 +241,11 @@ def main():
     
     #get data
     training_graph = tf.Graph()
-    print("Loading data...")
+    if comm_rank == 0:
+        print("Loading data...")
     path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
-    print("done.")
+    if comm_rank == 0:
+        print("done.")
     
     with training_graph.as_default():
         #create datasets
