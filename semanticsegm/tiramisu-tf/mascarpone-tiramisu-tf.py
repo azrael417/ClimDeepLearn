@@ -275,7 +275,9 @@ def main():
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         if horovod:
-            loss = hvd.allreduce(loss)
+            loss_average = hvd.allreduce(loss)/comm_size
+        else:
+            loss_average = loss
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
         opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
@@ -350,7 +352,7 @@ def main():
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss_average], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     
@@ -375,7 +377,7 @@ def main():
                         while True:
                             try:
                                 #construct feed dict
-                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
+                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss_average, prediction, next_elem[1]], feed_dict={handle: val_handle})
                                 if use_scipy:
                                     imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
                                             +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
