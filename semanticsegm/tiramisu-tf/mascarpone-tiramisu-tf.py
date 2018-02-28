@@ -176,7 +176,7 @@ class h5_input_reader(object):
         shape = None
 
         #data
-        with h5.File(self.path+'/'+datafile, "r") as f:
+        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
             #get shape info
             shape = f['climate']['data'].shape
             #get min and max values and update stored values
@@ -190,7 +190,7 @@ class h5_input_reader(object):
                 data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
 
         #label
-        with h5.File(self.path+'/'+labelfile, "r") as f:
+        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
             label = f['climate']['labels'][...].astype(np.int32)
 
         return data, label
