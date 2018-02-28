@@ -159,40 +159,46 @@ def load_data():
 
 class h5_input_reader(object):
     
-    def __init__(self, path, channels):
+    def __init__(self, path, channels, update_on_read=False):
         self.path = path
         self.channels = channels
-    
+        self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
+        self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
+        self.update_on_read = update_on_read
     
     def read(self, datafile, labelfile):
         
-        print(datafile)
-        
         #set shape to none in the beginning
         shape = None
-        
+
         #data
         with h5.File(self.path+'/'+datafile, "r") as f:
+            #get shape info
             shape = f['climate']['data'].shape
-            data = np.expand_dims(f['climate']['data'][:,:,self.channels].astype(np.float32), axis=0)
-        
+            #get min and max values and update stored values
+            if self.update_on_read:
+                self.minvals = np.minimum(self.minvals, f['climate']['data_stats'][0,self.channels])
+                self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
+            #get data
+            data = f['climate']['data'][:,:,self.channels].astype(np.float32)
+            #do min/max normalization
+            for c in range(len(self.channels)):
+                data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+
         #label
         with h5.File(self.path+'/'+labelfile, "r") as f:
-            label = np.expand_dims(f['climate']['labels'][...].astype(np.int32), axis=0)
-        
+            label = f['climate']['labels'][...].astype(np.int32)
+
         return data, label
 
 
-def create_dataset(basepath, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, channels, shuffle=False):
-    #instantiate input reader
-    h5r = h5_input_reader(basepath, channels)
-    
+def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
     dataset = tf.data.Dataset.from_tensor_slices((datafilelist, labelfilelist))
     if comm_size>1:
         dataset = dataset.shard(comm_size, comm_rank)
-    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5r.read, [dataname, labelname], [tf.float32, tf.int32])))
+    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5ir.read, [dataname, labelname], [tf.float32, tf.int32])))
     if shuffle:
-        dataset = dataset.shuffle(buffer_size=10000)
+        dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.batch(batchsize)
     dataset = dataset.repeat(num_epochs)
     
@@ -235,8 +241,10 @@ def main():
         #create datasets
         datafiles = tf.placeholder(tf.string, shape=[None])
         labelfiles = tf.placeholder(tf.string, shape=[None])
-        trn_dataset = create_dataset(path, datafiles, labelfiles, batch, num_epochs, comm_size, comm_rank, channels, True)
-        val_dataset = create_dataset(path, datafiles, labelfiles, batch, 1, comm_size, comm_rank, channels)
+        trn_reader = h5_input_reader(path, channels, update_on_read=True)
+        trn_dataset = create_dataset(trn_reader, datafiles, labelfiles, batch, num_epochs, comm_size, comm_rank, True)
+        val_reader = h5_input_reader(path, channels, update_on_read=False)
+        val_dataset = create_dataset(val_reader, datafiles, labelfiles, batch, 1, comm_size, comm_rank)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
@@ -332,7 +340,8 @@ def main():
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    _, _, train_steps, tmp_loss, batch = sess.run([train_op, iou_update_op, global_step, loss, next_elem[0]], feed_dict={handle: trn_handle})
+                    print(batch, trn_reader.minvals, trn_reader.maxvals)
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     
@@ -349,6 +358,9 @@ def main():
                         #evaluation loop
                         eval_loss = 0.
                         eval_steps = 0
+                        #update the input reader
+                        val_reader.minvals = trn_reader.minvals
+                        val_reader.maxvals = trn_reader.maxvals
                         while True:
                             try:
                                 #construct feed dict
