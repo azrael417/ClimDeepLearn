@@ -225,7 +225,7 @@ def main():
         print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
         
     #parameters
-    batch = 2
+    batch = 1
     channels = [0,1,2,10]
     blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
