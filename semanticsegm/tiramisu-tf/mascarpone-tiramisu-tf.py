@@ -226,7 +226,7 @@ def main():
     #parameters
     batch = 4
     channels = [0,1,2,10]
-    blocks = [3,3,4,4,7,7,10,10]
+    blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
     
     #session config
