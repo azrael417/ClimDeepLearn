@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
+import argparse
 use_scipy=True
 try:
     from scipy.misc import imsave
@@ -9,12 +10,14 @@ except:
     
 import h5py as h5
 import os
+import time
 
 #horovod, yes or no?
 horovod=True
 try:
     import horovod.tensorflow as hvd
-    print("Enabling Horovod Support")
+    if hvd.rank() == 0:
+        print("Enabling Horovod Support")
 except:
     horovod = False
     print("Disabling Horovod Support")
@@ -128,7 +131,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
 
 
 #Load Data
-def load_data():
+def load_data(MAX_FILES):
     #images from directory
     input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
     
@@ -137,7 +140,6 @@ def load_data():
     datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
     #we will choose to load only the first p files
-    MAX_FILES = 1000
     labelfiles = labelfiles[:MAX_FILES]
     datafiles = datafiles[:MAX_FILES] 
     
@@ -216,7 +218,7 @@ def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, com
 
 
 #main function
-def main():
+def main(blocks,image_dir,checkpoint_dir,trn_sz):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -226,12 +228,13 @@ def main():
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
-        print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
+        if comm_rank == 0:
+            print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
     #parameters
-    batch = 4
+    batch = 1
     channels = [0,1,2,10]
-    blocks = [3,3,4,4,7,7,10]
+    #blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
     
     #session config
@@ -243,12 +246,12 @@ def main():
     
     #get data
     training_graph = tf.Graph()
-    print("Loading data...")
-    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
+    if comm_rank == 0:
+        print("Loading data...")
+    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
     if comm_rank == 0:
       print("Shape of trn data is {}".format(trn_data.shape[0]))
     print("done.")
-    
     with training_graph.as_default():
         #create datasets
         datafiles = tf.placeholder(tf.string, shape=[None])
@@ -347,13 +350,13 @@ def main():
             #do the training
             epoch = 1
             train_loss = 0.
+            start_time = time.time()
             while not sess.should_stop():
                 
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss, batch = sess.run([train_op, iou_update_op, global_step, loss, next_elem[0]], feed_dict={handle: trn_handle})
-                    print(batch, trn_reader.minvals, trn_reader.maxvals)
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     
@@ -361,11 +364,13 @@ def main():
                         #print step report
                         print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
                     else:
+                        end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
                         iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
+                        start_time = time.time()
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -394,7 +399,7 @@ def main():
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-                                sess.run(val_init_op, feed_dict={handle: val_handle})
+                                sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
                                 break
                                 
                         #reset counters
@@ -429,4 +434,12 @@ def main():
         #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
-    main()
+    AP = argparse.ArgumentParser()
+    AP.add_argument("--blocks",default='3 3 4 4 7 7 10',type=str,help="Number of layers per block")
+    AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
+    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
+    AP.add_argument("--trn_sz",type=int,default=100,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    parsed = AP.parse_args()
+    tmp = [int(x) for x in parsed.blocks.split()]
+    parsed.blocks = tmp
+    main(blocks=parsed.blocks,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
