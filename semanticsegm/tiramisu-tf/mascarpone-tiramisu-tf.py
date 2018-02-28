@@ -15,11 +15,8 @@ import time
 horovod=True
 try:
     import horovod.tensorflow as hvd
-    if hvd.rank() == 0:
-        print("Enabling Horovod Support")
 except:
     horovod = False
-    print("Disabling Horovod Support")
 
 #GLOBAL CONSTANTS
 #image_height = 96
