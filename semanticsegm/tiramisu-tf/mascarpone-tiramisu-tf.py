@@ -136,8 +136,11 @@ def load_data():
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
     datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
-    import IPython; IPython.embed()
-
+    #we will choose to load only the first p files
+    MAX_FILES = 1000
+    labelfiles = labelfiles[:MAX_FILES]
+    datafiles = datafiles[:MAX_FILES] 
+    
     #only use the data where we have labels for
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
     
@@ -242,6 +245,8 @@ def main():
     training_graph = tf.Graph()
     print("Loading data...")
     path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
+    if comm_rank == 0:
+      print("Shape of trn data is {}".format(trn_data.shape[0]))
     print("done.")
     
     with training_graph.as_default():
