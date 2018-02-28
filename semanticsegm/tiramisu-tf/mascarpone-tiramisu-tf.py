@@ -130,7 +130,8 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
 #Load Data
 def load_data():
     #images from directory
-    input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
+    #input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
+    input_path = "./segm_h5_v3"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
