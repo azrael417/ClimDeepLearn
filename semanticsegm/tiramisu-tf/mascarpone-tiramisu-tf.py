@@ -131,6 +131,8 @@ def load_data():
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
     datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
+    import IPython; IPython.embed()
+
     #only use the data where we have labels for
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
     
