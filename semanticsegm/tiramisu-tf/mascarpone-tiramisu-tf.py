@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
+import argparse
 use_scipy=True
 try:
     from scipy.misc import imsave
@@ -127,13 +128,17 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
 
 
 #Load Data
-def load_data():
+def load_data(MAX_FILES):
     #images from directory
     input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
     datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    
+    #we will choose to load only the first p files
+    labelfiles = labelfiles[:MAX_FILES]
+    datafiles = datafiles[:MAX_FILES] 
     
     #only use the data where we have labels for
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
@@ -210,7 +215,7 @@ def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, com
 
 
 #main function
-def main():
+def main(blocks,image_dir,checkpoint_dir,trn_sz):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -226,7 +231,7 @@ def main():
     #parameters
     batch = 1
     channels = [0,1,2,10]
-    blocks = [3,3,4,4,7,7,10]
+    #blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
     
     #session config
@@ -240,10 +245,10 @@ def main():
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data()
+    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
     if comm_rank == 0:
-        print("done.")
-    
+      print("Shape of trn data is {}".format(trn_data.shape[0]))
+    print("done.")
     with training_graph.as_default():
         #create datasets
         datafiles = tf.placeholder(tf.string, shape=[None])
@@ -431,4 +436,12 @@ def main():
         #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
-    main()
+    AP = argparse.ArgumentParser()
+    AP.add_argument("--blocks",default='3 3 4 4 7 7 10',type=str,help="Number of layers per block")
+    AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
+    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
+    AP.add_argument("--trn_sz",type=int,default=100,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    parsed = AP.parse_args()
+    tmp = [int(x) for x in parsed.blocks.split()]
+    parsed.blocks = tmp
+    main(blocks=parsed.blocks,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
