@@ -230,8 +230,8 @@ def main():
     num_epochs = 150
     
     #session config
-    sess_config=tf.ConfigProto(inter_op_parallelism_threads=2,
-                               intra_op_parallelism_threads=33,
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
+                               intra_op_parallelism_threads=33, #6
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
@@ -274,6 +274,8 @@ def main():
         #set up model
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
+        if horovod:
+            loss = hvd.allreduce(loss)
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
         opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
@@ -358,7 +360,7 @@ def main():
                     else:
                         end_time = time.time()
                         #print epoch report
-                        train_loss = hvd.allreduce(train_loss) / (num_steps_per_epoch * comm_size)
+                        train_loss /= num_steps_per_epoch
                         print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
                         iou_score = sess.run(iou_op)
                         print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
@@ -387,7 +389,7 @@ def main():
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
-                                eval_loss = hvd.allreduce(eval_loss) / (eval_steps * comm_size)
+                                eval_loss /= eval_steps
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
