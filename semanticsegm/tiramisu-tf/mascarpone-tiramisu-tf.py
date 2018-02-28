@@ -30,7 +30,8 @@ image_width = 1152
 
 
 def conv(x, nf, sz, wd, stride=1): 
-    return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride), padding='same',
+    return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
+                            padding='same', data_format='channels_first',
                             kernel_initializer= tfk.initializers.he_uniform(),
                             bias_initializer=tf.initializers.zeros(),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
@@ -41,21 +42,21 @@ def dense_block(n, x, growth_rate, p, wd, training):
     added = []
     for i in range(n):
         with tf.name_scope("bn_relu_conv%i"%i) as scope:
-            b = tf.layers.batch_normalization(x, training=training)
+            b = tf.layers.batch_normalization(x, axis=1, training=training)
             b = tf.nn.relu(b)
             b = conv(b, growth_rate, sz=3, wd=wd)
             if p: b = tf.layers.dropout(b, rate=p, training=training)
 
-            x = tf.concat([x, b], axis=-1)
+            x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
             added.append(b)
 
     return x, added
 
 def transition_dn(x, p, wd, training):
     with tf.name_scope("bn_relu_conv") as scope:
-        b = tf.layers.batch_normalization(x, training=training)
+        b = tf.layers.batch_normalization(x, axis=1, training=training)
         b = tf.nn.relu(b)
-        b = conv(b, x.get_shape().as_list()[-1], sz=1, wd=wd, stride=2)
+        b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
         if p: b = tf.layers.dropout(b, rate=p, training=training)
     return b
 
@@ -77,10 +78,10 @@ def reverse(a):
 
 
 def transition_up(added,wd,training):
-    x = tf.concat(added,axis=-1) 
+    x = tf.concat(added,axis=1) 
     _, r, c, ch = x.get_shape().as_list()
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
-				   padding='same',filters=ch,
+				   padding='same', data_format='channels_first', filters=ch,
 				   kernel_initializer=tfk.initializers.he_uniform(),
 				   bias_initializer=tf.initializers.zeros(),
                    kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
@@ -91,7 +92,7 @@ def transition_up(added,wd,training):
 def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
     for i,n in enumerate(nb_layers):
 	x = transition_up(added,wd,training)
-	x = tf.concat([x,skips[i]],axis=-1)
+	x = tf.concat([x,skips[i]],axis=1) #was axis=-1. Is that correct?
 	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
@@ -123,12 +124,13 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
         x = conv(x,nb_classes,sz=1,wd=wd)
         if p: x = tf.layers.dropout(x, rate=p, training=training)
         _,r,c,f = x.get_shape().as_list()
-    x = tf.reshape(x,[-1,image_height,image_width,nb_classes])
+    #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
+    x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
     return x, tf.nn.softmax(x)
 
 
 #Load Data
-def load_data(MAX_FILES):
+def load_data(max_files):
     #images from directory
     #input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
     input_path = "./segm_h5_v3"
@@ -138,8 +140,8 @@ def load_data(MAX_FILES):
     datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
     #we will choose to load only the first p files
-    labelfiles = labelfiles[:MAX_FILES]
-    datafiles = datafiles[:MAX_FILES] 
+    labelfiles = labelfiles[:max_files]
+    datafiles = datafiles[:max_files] 
     
     #only use the data where we have labels for
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
@@ -194,6 +196,9 @@ class h5_input_reader(object):
             #do min/max normalization
             for c in range(len(self.channels)):
                 data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+                
+            #transposition necessary because we went to NCHW
+            data = np.transpose(data,[2,0,1])
 
         #label
         with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
@@ -248,7 +253,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         print("Loading data...")
     path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
     if comm_rank == 0:
-      print("Shape of trn data is {}".format(trn_data.shape[0]))
+      print("Shape of trn_data is {}".format(trn_data.shape[0]))
     print("done.")
     with training_graph.as_default():
         #create datasets
@@ -262,7 +267,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32), 
-                                                       ((batch, image_height, image_width, len(channels)), 
+                                                       ((batch, len(channels), image_height, image_width),
                                                        (batch, image_height, image_width))
                                                        )
         next_elem = iterator.get_next()
@@ -309,9 +314,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         init_local_op = tf.local_variables_initializer()
         
         #checkpointing
-        image_dir = './images'
         if comm_rank == 0:
-            checkpoint_dir = './checkpoints'
             checkpoint_save_freq = num_steps_per_epoch
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
             hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
@@ -441,7 +444,7 @@ if __name__ == '__main__':
     AP.add_argument("--blocks",default='3 3 4 4 7 7 10',type=str,help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
-    AP.add_argument("--trn_sz",type=int,default=100,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     parsed = AP.parse_args()
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
