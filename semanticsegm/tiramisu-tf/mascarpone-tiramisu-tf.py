@@ -386,7 +386,7 @@ def main():
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-                                sess.run(val_init_op, feed_dict={handle: val_handle})
+                                sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
                                 break
                                 
                         #reset counters
