@@ -275,8 +275,10 @@ def main():
         #set up model
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
-        if horovod:
-            loss = hvd.allreduce(loss)
+        #if horovod:
+        #    loss_average = hvd.allreduce(loss)/comm_size
+        #else:
+        #    loss_average = loss
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
         opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
