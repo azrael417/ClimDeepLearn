@@ -391,6 +391,7 @@ def main():
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
+                                eval_steps = np.max([eval_steps,1])
                                 eval_loss /= eval_steps
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
