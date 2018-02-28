@@ -345,6 +345,7 @@ def main():
             #do the training
             epoch = 1
             train_loss = 0.
+            start_time = time.time()
             while not sess.should_stop():
                 
                 #training loop
@@ -358,11 +359,13 @@ def main():
                         #print step report
                         print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
                     else:
+                        end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, train_loss))
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, duration {}".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
                         iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, duration {}".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
+                        start_time = time.time()
                         
                         #evaluation loop
                         eval_loss = 0.
