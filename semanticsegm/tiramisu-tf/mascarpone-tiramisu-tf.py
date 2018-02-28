@@ -358,7 +358,7 @@ def main():
                     else:
                         end_time = time.time()
                         #print epoch report
-                        train_loss /= num_steps_per_epoch
+                        train_loss = hvd.allreduce(train_loss) / (num_steps_per_epoch * comm_size)
                         print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
                         iou_score = sess.run(iou_op)
                         print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
@@ -387,7 +387,7 @@ def main():
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
-                                eval_loss /= eval_steps
+                                eval_loss = hvd.allreduce(eval_loss) / (eval_steps * comm_size)
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
