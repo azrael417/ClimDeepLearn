@@ -1,7 +1,12 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 import numpy as np
-from scipy.misc import imsave
+use_scipy=True
+try:
+    from scipy.misc import imsave
+except:
+    use_scipy=False
+    
 import h5py as h5
 import os
 
@@ -365,10 +370,16 @@ def main():
                             try:
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                        +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                if use_scipy:
+                                    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                else:
+                                    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
