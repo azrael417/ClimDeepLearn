@@ -37,6 +37,7 @@ def conv(x, nf, sz, wd, stride=1):
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
                             )
 
+
 def dense_block(n, x, growth_rate, p, wd, training):
 
     added = []
@@ -52,6 +53,7 @@ def dense_block(n, x, growth_rate, p, wd, training):
 
     return x, added
 
+
 def transition_dn(x, p, wd, training):
     with tf.name_scope("bn_relu_conv") as scope:
         b = tf.layers.batch_normalization(x, axis=1, training=training)
@@ -59,6 +61,7 @@ def transition_dn(x, p, wd, training):
         b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
         if p: b = tf.layers.dropout(b, rate=p, training=training)
     return b
+
 
 def down_path(x, nb_layers, growth_rate, p, wd, training):
 
@@ -79,7 +82,7 @@ def reverse(a):
 
 def transition_up(added,wd,training):
     x = tf.concat(added,axis=1) 
-    _, r, c, ch = x.get_shape().as_list()
+    _, ch, r, c = x.get_shape().as_list()
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
 				   padding='same', data_format='channels_first', filters=ch,
 				   kernel_initializer=tfk.initializers.he_uniform(),
@@ -96,6 +99,7 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
         x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
+
 def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
          growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
     
@@ -104,13 +108,6 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
     with tf.variable_scope("conv_input") as scope:
-        #init_w = tfk.initializers.he_uniform()
-        #init_b = tf.initializers.zeros()
-        #x = tf.nn.conv2d(input=img_input, 
-        #                filter=tf.Variable(init_w([3,3,nc,nb_filter]),dtype=tf.float32),
-        #                strides=[1, 1, 1, 1],
-        #                padding='SAME')
-        #x = tf.nn.bias_add(x, tf.Variable(init_b(nb_filter),dtype=tf.float32))
         x = conv(img_input, nb_filter, sz=3, wd=wd)
         if p: x = tf.layers.dropout(x, rate=p, training=training)
 
@@ -123,7 +120,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6,
     with tf.name_scope("conv_output") as scope:
         x = conv(x,nb_classes,sz=1,wd=wd)
         if p: x = tf.layers.dropout(x, rate=p, training=training)
-        _,r,c,f = x.get_shape().as_list()
+        _,f,r,c = x.get_shape().as_list()
     #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
     x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
     return x, tf.nn.softmax(x)
@@ -253,8 +250,8 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         print("Loading data...")
     path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
     if comm_rank == 0:
-      print("Shape of trn_data is {}".format(trn_data.shape[0]))
-    print("done.")
+        print("Shape of trn_data is {}".format(trn_data.shape[0]))
+        print("done.")
     with training_graph.as_default():
         #create datasets
         datafiles = tf.placeholder(tf.string, shape=[None])
