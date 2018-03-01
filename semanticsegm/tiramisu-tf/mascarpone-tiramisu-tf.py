@@ -113,7 +113,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
     return variable
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
-         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, loss_weights=weights, p=None, wd=0., training=True, dtype=tf.float16):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
@@ -473,5 +473,6 @@ if __name__ == '__main__':
     parsed = AP.parse_args()
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
-    print(parsed.frequencies)
-    main(blocks=parsed.blocks,weights=parsed.frequencies,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
+    weights = [1./x for x in parsed.frequencies]
+    weights /= np.sum(weights)
+    main(blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
