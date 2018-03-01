@@ -202,7 +202,7 @@ class h5_input_reader(object):
         shape = None
 
         #data
-        begin=time.time()
+        #begin=time.time()
         with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
             #get shape info
             shape = f['climate']['data'].shape
@@ -223,8 +223,8 @@ class h5_input_reader(object):
         #label
         with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
             label = f['climate']['labels'][...].astype(np.int32)
-        end=time.time()
-        print "Time to read image %.3f s" % (end-begin)
+        #end=time.time()
+        #print "Time to read image %.3f s" % (end-begin)
 
         return data, label
 
