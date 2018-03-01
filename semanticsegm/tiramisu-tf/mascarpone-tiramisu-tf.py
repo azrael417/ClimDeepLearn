@@ -243,7 +243,7 @@ def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, com
 
 
 #main function
-def main(blocks,image_dir,checkpoint_dir,trn_sz):
+def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -306,7 +306,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, loss_weights=weights, p=0.2, wd=1e-4, dtype=dtype)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         #if horovod:
         #    loss_average = hvd.allreduce(loss)/comm_size
@@ -368,7 +368,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
-            sess.run([init_op, init_local_op], options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+            sess.run([init_op, init_local_op])#, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -468,7 +468,9 @@ if __name__ == '__main__':
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--frequencies",default=[0.98 0.1 0.1],type=int, nargs='*',help="Frequencies per class used for reweighting")
     parsed = AP.parse_args()
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
-    main(blocks=parsed.blocks,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
+    print(parsed.frequencies)
+    main(blocks=parsed.blocks,weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
