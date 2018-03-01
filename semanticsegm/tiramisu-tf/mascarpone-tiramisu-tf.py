@@ -315,14 +315,16 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
 
         #set up model
         logit, prediction, weight = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
+        
+        #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        weighted_labels_one_hot = tf.multiply(labels_one_hot, weight)
+        loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit)
         #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
-        loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_one_hot,logits=logit)
-        #if horovod:
-        #    loss_average = hvd.allreduce(loss)/comm_size
-        #else:
-        #    loss_average = loss
+        
+        #set up global step
         global_step = tf.train.get_or_create_global_step()
+        
         #set up optimizer
         opt = tf.train.AdamOptimizer(learning_rate=1e-3)
         if horovod:
