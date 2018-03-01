@@ -319,24 +319,24 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
             if not os.path.isdir(image_dir):
                 os.makedirs(image_dir)
         
-        #DEBUG
-        #summary
-        if comm_rank == 0:
-            print("write graph for debugging")
-            tf.summary.scalar("loss",loss)
-            summary_op = tf.summary.merge_all()
-            #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
-            with tf.Session(config=sess_config) as sess:
-                sess.run([init_op, init_local_op])
-                #create iterator handles
-                trn_handle = sess.run(trn_handle_string)
-                #init iterators
-                sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
-                #summary:
-                sess.run(summary_op, feed_dict={handle: trn_handle})
-                #summary file writer
-                summary_writer = tf.summary.FileWriter('./logs', sess.graph)
-        #DEBUG
+        ##DEBUG
+        ##summary
+        #if comm_rank == 0:
+        #    print("write graph for debugging")
+        #    tf.summary.scalar("loss",loss)
+        #    summary_op = tf.summary.merge_all()
+        #    #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
+        #    with tf.Session(config=sess_config) as sess:
+        #        sess.run([init_op, init_local_op])
+        #        #create iterator handles
+        #        trn_handle = sess.run(trn_handle_string)
+        #        #init iterators
+        #        sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
+        #        #summary:
+        #        sess.run(summary_op, feed_dict={handle: trn_handle})
+        #        #summary file writer
+        #        summary_writer = tf.summary.FileWriter('./logs', sess.graph)
+        ##DEBUG
         
 
         #start session
