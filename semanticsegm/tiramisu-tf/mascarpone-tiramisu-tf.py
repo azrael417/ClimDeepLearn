@@ -4,6 +4,7 @@ import numpy as np
 from scipy.misc import imsave
 import h5py as h5
 import os
+import time
 
 #horovod, yes or no?
 horovod=True
@@ -90,42 +91,68 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
 	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
+def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
+                                    initializer=None, regularizer=None,
+                                    trainable=True,
+                                    *args, **kwargs):
+    storage_dtype = tf.float32 if trainable else dtype
+    variable = getter(name, shape, dtype=storage_dtype,
+                      initializer=initializer, regularizer=regularizer,
+                      trainable=trainable,
+                      *args, **kwargs)
+    if trainable and dtype != tf.float32:
+        variable = tf.cast(variable, dtype)
+    return variable
+
 def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
-         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    with tf.variable_scope("conv_input") as scope:
-        #init_w = tfk.initializers.he_uniform()
-        #init_b = tf.initializers.zeros()
-        #x = tf.nn.conv2d(input=img_input, 
-        #                filter=tf.Variable(init_w([3,3,nc,nb_filter]),dtype=tf.float32),
-        #                strides=[1, 1, 1, 1],
-        #                padding='SAME')
-        #x = tf.nn.bias_add(x, tf.Variable(init_b(nb_filter),dtype=tf.float32))
-        x = conv(img_input, nb_filter, sz=3, wd=wd)
-        if p: x = tf.layers.dropout(x, rate=p, training=training)
+    # Probably better to do this in the reader
+    if dtype != tf.float32:
+        img_input = tf.cast(img_input, dtype)
 
-    with tf.name_scope("down_path") as scope:
-        skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training)
-    
-    with tf.name_scope("up_path") as scope:
-        x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd,training=training)
+    # TODO: Go to NCHW?
+    # img_input = tf.transpose(img_input, [0,3,1,2])
 
-    with tf.name_scope("conv_output") as scope:
-        x = conv(x,nb_classes,sz=1,wd=wd)
-        if p: x = tf.layers.dropout(x, rate=p, training=training)
-        _,r,c,f = x.get_shape().as_list()
-    x = tf.reshape(x,[-1,image_height,image_width,nb_classes])
+    with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
+
+        with tf.variable_scope("conv_input") as scope:
+            #init_w = tfk.initializers.he_uniform()
+            #init_b = tf.initializers.zeros()
+            #x = tf.nn.conv2d(input=img_input, 
+            #                filter=tf.Variable(init_w([3,3,nc,nb_filter]),dtype=tf.float32),
+            #                strides=[1, 1, 1, 1],
+            #                padding='SAME')
+            #x = tf.nn.bias_add(x, tf.Variable(init_b(nb_filter),dtype=tf.float32))
+            x = conv(img_input, nb_filter, sz=3, wd=wd)
+            if p: x = tf.layers.dropout(x, rate=p, training=training)
+
+        with tf.name_scope("down_path") as scope:
+            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training)
+        
+        with tf.name_scope("up_path") as scope:
+            x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd,training=training)
+
+        with tf.name_scope("conv_output") as scope:
+            x = conv(x,nb_classes,sz=1,wd=wd)
+            if p: x = tf.layers.dropout(x, rate=p, training=training)
+            _,r,c,f = x.get_shape().as_list()
+        x = tf.reshape(x,[-1,image_height,image_width,nb_classes])
+
+    if x.dtype != tf.float32:
+        x = tf.cast(x, tf.float32)
+
     return x, tf.nn.softmax(x)
 
 
 #Load Data
 def load_data():
     #images from directory
-    input_path = "/global/cscratch1/sd/amahesh/segm_h5_v3"
+    input_path = "/raid/Climate-large/segm_h5_v3/"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
@@ -172,7 +199,8 @@ class h5_input_reader(object):
         shape = None
 
         #data
-        with h5.File(self.path+'/'+datafile, "r") as f:
+        begin=time.time()
+        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
             #get shape info
             shape = f['climate']['data'].shape
             #get min and max values and update stored values
@@ -181,13 +209,16 @@ class h5_input_reader(object):
                 self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
             #get data
             data = f['climate']['data'][:,:,self.channels].astype(np.float32)
+            #data = data[:,:,self.channels]
             #do min/max normalization
             for c in range(len(self.channels)):
                 data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
 
         #label
-        with h5.File(self.path+'/'+labelfile, "r") as f:
+        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
             label = f['climate']['labels'][...].astype(np.int32)
+        end=time.time()
+        print "Time to read image %.3f s" % (end-begin)
 
         return data, label
 
@@ -219,16 +250,17 @@ def main():
         print("Using distributed computation with Horovod: {} total ranks, I am rank {}".format(comm_size,comm_rank))
         
     #parameters
-    batch = 4
+    batch = 2
     channels = [0,1,2,10]
     blocks = [3,3,4,4,7,7,10,10]
     num_epochs = 150
+    dtype = tf.float16
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2,
                                intra_op_parallelism_threads=33,
-                               log_device_placement=False,
-                               allow_soft_placement=True)
+                               log_device_placement=True,
+                               allow_soft_placement=False)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
     
     #get data
@@ -265,7 +297,7 @@ def main():
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
