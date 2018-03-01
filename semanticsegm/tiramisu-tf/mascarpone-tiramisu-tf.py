@@ -345,7 +345,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
-            sess.run([init_op, init_local_op])
+            sess.run([init_op, init_local_op], options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
