@@ -326,7 +326,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         global_step = tf.train.get_or_create_global_step()
         
         #set up optimizer
-        opt = tf.train.AdamOptimizer(learning_rate=1e-3)
+        opt = tf.train.AdamOptimizer(learning_rate=1e-4)
         if horovod:
             opt = hvd.DistributedOptimizer(opt)
         train_op = opt.minimize(loss, global_step=global_step)
