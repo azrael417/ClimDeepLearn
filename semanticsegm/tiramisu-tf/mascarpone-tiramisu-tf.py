@@ -333,7 +333,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
                 #create iterator handles
                 trn_handle = sess.run(trn_handle_string)
                 #init iterators
-                sess.run(trn_init_op, feed_dict={handle: trn_handle, trn_feat_placeholder: trn, trn_lab_placeholder: trn_labels})
+                sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
                 #summary:
                 sess.run(summary_op, feed_dict={handle: trn_handle})
                 #summary file writer
