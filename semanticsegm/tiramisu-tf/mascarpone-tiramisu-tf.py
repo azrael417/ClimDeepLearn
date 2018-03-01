@@ -91,9 +91,9 @@ def transition_up(added,wd,training):
 	
 def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
     for i,n in enumerate(nb_layers):
-	x = transition_up(added,wd,training)
-	x = tf.concat([x,skips[i]],axis=1) #was axis=-1. Is that correct?
-	x, added = dense_block(n,x,growth_rate,p,wd,training=training)
+        x = transition_up(added,wd,training)
+        x = tf.concat([x,skips[i]],axis=1) #was axis=-1. Is that correct?
+        x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
