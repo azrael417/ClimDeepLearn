@@ -112,8 +112,8 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
         variable = tf.cast(variable, dtype)
     return variable
 
-def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
-         growth_rate=16, nb_filter=48, nb_layers_per_block=5, loss_weights=weights, p=None, wd=0., training=True, dtype=tf.float16):
+def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
@@ -307,7 +307,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, loss_weights=weights, p=0.2, wd=1e-4, dtype=dtype)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         #if horovod:
         #    loss_average = hvd.allreduce(loss)/comm_size
