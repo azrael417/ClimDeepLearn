@@ -99,30 +99,52 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
         x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
+def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
+                                    initializer=None, regularizer=None,
+                                    trainable=True,
+                                    *args, **kwargs):
+    storage_dtype = tf.float32 if trainable else dtype
+    variable = getter(name, shape, dtype=storage_dtype,
+                      initializer=initializer, regularizer=regularizer,
+                      trainable=trainable,
+                      *args, **kwargs)
+    if trainable and dtype != tf.float32:
+        variable = tf.cast(variable, dtype)
+    return variable
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, nb_dense_block=6, 
-         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True):
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    with tf.variable_scope("conv_input") as scope:
-        x = conv(img_input, nb_filter, sz=3, wd=wd)
-        if p: x = tf.layers.dropout(x, rate=p, training=training)
+    # Probably better to do this in the reader
+    if dtype != tf.float32:
+        img_input = tf.cast(img_input, dtype)
 
-    with tf.name_scope("down_path") as scope:
-        skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training)
-    
-    with tf.name_scope("up_path") as scope:
-        x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd,training=training)
+    with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
 
-    with tf.name_scope("conv_output") as scope:
-        x = conv(x,nb_classes,sz=1,wd=wd)
-        if p: x = tf.layers.dropout(x, rate=p, training=training)
-        _,f,r,c = x.get_shape().as_list()
-    #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
-    x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
+        with tf.variable_scope("conv_input") as scope:
+            x = conv(img_input, nb_filter, sz=3, wd=wd)
+            if p: x = tf.layers.dropout(x, rate=p, training=training)
+
+        with tf.name_scope("down_path") as scope:
+            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training)
+        
+        with tf.name_scope("up_path") as scope:
+            x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd,training=training)
+
+        with tf.name_scope("conv_output") as scope:
+            x = conv(x,nb_classes,sz=1,wd=wd)
+            if p: x = tf.layers.dropout(x, rate=p, training=training)
+            _,f,r,c = x.get_shape().as_list()
+        #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
+        x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
+
+        if x.dtype != tf.float32:
+            x = tf.cast(x, tf.float32)
+
     return x, tf.nn.softmax(x)
 
 
@@ -181,6 +203,7 @@ class h5_input_reader(object):
         shape = None
 
         #data
+        begin=time.time()
         with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
             #get shape info
             shape = f['climate']['data'].shape
@@ -190,6 +213,7 @@ class h5_input_reader(object):
                 self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
             #get data
             data = f['climate']['data'][:,:,self.channels].astype(np.float32)
+            #data = data[:,:,self.channels]
             #do min/max normalization
             for c in range(len(self.channels)):
                 data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
@@ -200,6 +224,8 @@ class h5_input_reader(object):
         #label
         with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
             label = f['climate']['labels'][...].astype(np.int32)
+        end=time.time()
+        print "Time to read image %.3f s" % (end-begin)
 
         return data, label
 
@@ -236,6 +262,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
     channels = [0,1,2,10]
     #blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
+    dtype = tf.float16
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -280,7 +307,7 @@ def main(blocks,image_dir,checkpoint_dir,trn_sz):
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
         loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
         #if horovod:
         #    loss_average = hvd.allreduce(loss)/comm_size
