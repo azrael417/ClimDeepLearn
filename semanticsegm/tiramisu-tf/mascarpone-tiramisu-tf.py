@@ -318,8 +318,8 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         
         #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-        #weighted_labels_one_hot = tf.multiply(labels_one_hot, weight)
-        loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=weight)
+        weighted_labels_one_hot = tf.multiply(labels_one_hot, weight)
+        loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
         #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
         
         #set up global step
