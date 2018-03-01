@@ -469,7 +469,7 @@ if __name__ == '__main__':
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--frequencies",default=[0.98 0.1 0.1],type=int, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--frequencies",default=[0.98 0.1 0.1],type=float, nargs='*',help="Frequencies per class used for reweighting")
     parsed = AP.parse_args()
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
