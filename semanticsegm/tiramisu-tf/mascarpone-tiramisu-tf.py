@@ -148,8 +148,8 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             x = tf.cast(x, tf.float32)
         
         #create weight tensor
-        ww = np.zeros((1,len(loss_weights),1,1))
-        ww[0,:,0,0] = loss_weights[:]
+        ww = np.zeros((1,1,1,len(loss_weights)))
+        ww[0,0,0,:] = loss_weights[:]
         weights = tf.constant(ww, dtype=tf.float32)
         
     return x, tf.nn.softmax(x), weights
