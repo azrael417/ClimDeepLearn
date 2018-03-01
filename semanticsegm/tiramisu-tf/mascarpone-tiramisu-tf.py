@@ -474,4 +474,4 @@ if __name__ == '__main__':
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
     print(parsed.frequencies)
-    main(blocks=parsed.blocks,weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
+    main(blocks=parsed.blocks,weights=parsed.frequencies,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
