@@ -317,7 +317,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         logit, prediction, weight = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
-        loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit)
+        loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_one_hot,logits=logit)
         #if horovod:
         #    loss_average = hvd.allreduce(loss)/comm_size
         #else:
