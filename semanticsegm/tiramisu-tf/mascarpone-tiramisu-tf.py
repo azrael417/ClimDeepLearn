@@ -99,6 +99,7 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
         x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
+
 def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
                                     initializer=None, regularizer=None,
                                     trainable=True,
@@ -111,6 +112,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
     if trainable and dtype != tf.float32:
         variable = tf.cast(variable, dtype)
     return variable
+
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
          growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
@@ -144,14 +146,19 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
         if x.dtype != tf.float32:
             x = tf.cast(x, tf.float32)
-
-    return x, tf.nn.softmax(x)
+        
+        #create weight tensor
+        ww = np.zeros((1,len(loss_weights),1,1))
+        ww[0,:,0,0] = loss_weights[:]
+        weights = tf.constant(ww)
+        
+    return x, tf.nn.softmax(x), weights
 
 
 #Load Data
 def load_data(max_files):
     #images from directory
-    input_path = "/raid/Climate-large/segm_h5_v3/"
+    input_path = "./segm_h5_v3/"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
@@ -278,6 +285,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
+    
     with training_graph.as_default():
         #create datasets
         datafiles = tf.placeholder(tf.string, shape=[None])
@@ -306,20 +314,20 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
-        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
+        logit, prediction, weight = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
+        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
         #if horovod:
         #    loss_average = hvd.allreduce(loss)/comm_size
         #else:
         #    loss_average = loss
         global_step = tf.train.get_or_create_global_step()
         #set up optimizer
-        opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+        opt = tf.train.AdamOptimizer(learning_rate=1e-3)
         if horovod:
             opt = hvd.DistributedOptimizer(opt)
         train_op = opt.minimize(loss, global_step=global_step)
         #set up streaming metrics
-        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
@@ -368,7 +376,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
-            sess.run([init_op, init_local_op])#, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+            sess.run([init_op, init_local_op])
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -468,7 +476,7 @@ if __name__ == '__main__':
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--frequencies",default=[0.98,0.1,0.1],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     parsed = AP.parse_args()
     tmp = [int(x) for x in parsed.blocks.split()]
     parsed.blocks = tmp
