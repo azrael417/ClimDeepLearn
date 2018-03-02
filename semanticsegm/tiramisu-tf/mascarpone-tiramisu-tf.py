@@ -211,14 +211,14 @@ class h5_input_manager(object):
     def generate_tuples(self):
         result=[]
         for fname in self.filelist:
-            result+=[(fname,id) for id in range(self.num_samples[fname])]
-        return result
+            result+=[[fname,str(idx)] for idx in range(self.num_samples[fname])]
+        return np.asarray(result)
     
     def read(self, datatuple):
         
         #extract tuple information
         fname = datatuple[0]
-        index = datatuple[1]
+        index = int(datatuple[1])
         
         #ref to handle
         f = self.files[fname]
