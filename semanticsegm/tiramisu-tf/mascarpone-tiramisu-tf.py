@@ -217,6 +217,9 @@ class h5_input_manager(object):
     
     def read(self, datatuple):
         
+        #timing IO
+        begin_time = time.time()
+        
         #extract tuple information
         fname = datatuple[0]
         index = int(datatuple[1])
@@ -237,8 +240,8 @@ class h5_input_manager(object):
                 
         #get label
         label = f['climate']['labels'][index,:,:].astype(np.int32)
-        #end=time.time()
-        #print "Time to read image %.3f s" % (end-begin)
+        end_time = time.time()
+        print "Time to read image %.3f s" % (end_time-begin_time)
 
         return data, label
 
