@@ -4,7 +4,11 @@ import os
 
 #path
 input_path="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3"
-output_path="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_merged"
+output_path="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_uncompressed"
+
+#create output path if not exists
+if not os.path.isdir(output_path):
+    os.makedirs(output_path)
 
 #look for labels and data files
 labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
@@ -41,11 +45,11 @@ for mc in range(mergecount):
         #create group
         f.create_group("climate")
         #create data dataset
-        dset = f.create_dataset("climate/data", (mergesize,16,768,1152), chunks=(1,16,768,1152))
-        dset = data
+        dset_d = f.create_dataset("climate/data", (mergesize,16,768,1152), chunks=(1,16,768,1152))
+        dset_d[...] = data[...]
         #create labels dataset
-        dset = f.create_dataset("climate/labels", (mergesize,768,1152), chunks=(1,768,1152))
-        dset = labels
+        dset_l = f.create_dataset("climate/labels", (mergesize,768,1152), chunks=(1,768,1152))
+        dset_l[...] = labels[...]
         #create stats dataset
-        dset = f.create_dataset("climate/stats", (mergesize,16,4), chunks=(1,16,4))
-        dset = data_stats
+        dset_s = f.create_dataset("climate/stats", (mergesize,16,4), chunks=(1,16,4))
+        dset_s[...] = data_stats[...]

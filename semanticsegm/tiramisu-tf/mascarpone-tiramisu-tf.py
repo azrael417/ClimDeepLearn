@@ -151,9 +151,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
 
 #Load Data
-def load_data(comm_size, comm_rank, max_files):
-    #images from directory
-    input_path = "./segm_h5_v3_merged/"
+def load_data(input_path, comm_size, comm_rank, max_files):
     
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
@@ -218,7 +216,7 @@ class h5_input_manager(object):
     def read(self, datatuple):
         
         #timing IO
-        begin_time = time.time()
+        #begin_time = time.time()
         
         #extract tuple information
         fname = datatuple[0]
@@ -240,8 +238,8 @@ class h5_input_manager(object):
                 
         #get label
         label = f['climate']['labels'][index,:,:].astype(np.int32)
-        end_time = time.time()
-        print "Time to read image %.3f s" % (end_time-begin_time)
+        #end_time = time.time()
+        #print "Time to read image %.3f s" % (end_time-begin_time)
 
         return data, label
 
@@ -261,7 +259,7 @@ def create_dataset(h5manager, batchsize, num_epochs, shuffle=False):
 
 
 #main function
-def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
+def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -291,7 +289,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, val_data, tst_data = load_data(comm_size,comm_rank,trn_sz)
+    path, trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
@@ -358,7 +356,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
         
         #checkpointing
         if comm_rank == 0:
-            checkpoint_save_freq = num_steps_per_epoch
+            checkpoint_save_freq = num_steps_per_epoch * 10
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
             hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
             #create image dir if not exists
@@ -424,8 +422,8 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
                         eval_loss = 0.
                         eval_steps = 0
                         #update the input reader
-                        val_reader.minvals = trn_reader.minvals
-                        val_reader.maxvals = trn_reader.maxvals
+                        val_manager.minvals = trn_manager.minvals
+                        val_manager.maxvals = trn_manager.maxvals
                         while True:
                             try:
                                 #construct feed dict
@@ -490,7 +488,8 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--datadir",type=str,help="Path to input data")
     parsed = AP.parse_args()
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    main(blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr)
