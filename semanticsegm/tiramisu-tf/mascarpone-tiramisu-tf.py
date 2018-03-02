@@ -297,7 +297,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
         #files = tf.placeholder(tf.string, shape=[None])
         trn_manager = h5_input_manager(path, trn_data, channels, update_on_read=True)
         trn_dataset = create_dataset(trn_manager, batch, num_epochs, shuffle=True)
-        val_manager = h5_input_reader(path, val_data, channels, update_on_read=False)
+        val_manager = h5_input_manager(path, val_data, channels, update_on_read=False)
         val_dataset = create_dataset(val_manager, batch, 1, shuffle=False)
         
         #create iterators
