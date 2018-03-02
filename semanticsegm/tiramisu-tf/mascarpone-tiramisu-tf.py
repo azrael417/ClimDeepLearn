@@ -247,7 +247,7 @@ def create_dataset(h5manager, batchsize, num_epochs, shuffle=False):
     datatuples=h5manager.generate_tuples()
     
     dataset = tf.data.Dataset.from_tensor_slices(datatuples)
-    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5ir.read, [datatuple], [tf.float32, tf.int32])))
+    dataset = dataset.map(lambda datatuple: tuple(tf.py_func(h5ir.read, [datatuple], [tf.float32, tf.int32])))
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.batch(batchsize)
