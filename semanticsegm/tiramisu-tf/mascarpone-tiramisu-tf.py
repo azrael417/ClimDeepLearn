@@ -151,12 +151,14 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
 
 #Load Data
-def load_data(max_files, comm_size, comm_rank):
+def load_data(comm_size, comm_rank, max_files):
     #images from directory
     input_path = "./segm_h5_v3_merged/"
     
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    
+    print(files)
     
     #we will choose to load only the first p files
     files = files[:max_files]
@@ -289,7 +291,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, val_data, tst_data = load_data(trn_sz,comm_size,comm_rank)
+    path, trn_data, val_data, tst_data = load_data(comm_size,comm_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
