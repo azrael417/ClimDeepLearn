@@ -158,20 +158,14 @@ def load_data(comm_size, comm_rank, max_files):
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
-    print(files)
-    
     #we will choose to load only the first p files
     files = files[:max_files]
     
     #shard by ranks
-    start = comm_rank*comm_size
-    end = np.min([len(files),start+comm_size])
-    
-    print(start,end)
-    
+    files_per_rank = len(files) // comm_size
+    start = comm_rank*files_per_rank
+    end = np.min([len(files),start+files_per_rank])    
     files = files[start:end]
-    
-    print(files)
     
     #convert to numpy
     files = np.asarray(files)
