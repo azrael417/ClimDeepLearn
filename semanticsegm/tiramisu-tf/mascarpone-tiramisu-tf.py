@@ -168,8 +168,9 @@ def load_data(max_files):
     labelfiles = labelfiles[:max_files]
     datafiles = datafiles[:max_files] 
     
-    #only use the data where we have labels for
+    #only use the data where we have labels for and vice versa
     datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
+    labelfiles = [x for x in labelfiles if x.replace("labels","data") in datafiles]
     
     #convert to numpy
     datafiles = np.asarray(datafiles)
@@ -250,7 +251,7 @@ def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, com
 
 
 #main function
-def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
+def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -268,7 +269,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
     channels = [0,1,2,10]
     #blocks = [3,3,4,4,7,7,10]
     num_epochs = 150
-    dtype = tf.float16
+    dtype = tf.float32
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -326,7 +327,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         global_step = tf.train.get_or_create_global_step()
         
         #set up optimizer
-        opt = tf.train.AdamOptimizer(learning_rate=1e-4)
+        opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
         if horovod:
             opt = hvd.DistributedOptimizer(opt)
         train_op = opt.minimize(loss, global_step=global_step)
@@ -475,14 +476,13 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--blocks",default='3 3 4 4 7 7 10',type=str,help="Number of layers per block")
+    AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
+    AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     parsed = AP.parse_args()
-    tmp = [int(x) for x in parsed.blocks.split()]
-    parsed.blocks = tmp
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    main(blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
+    main(blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr)

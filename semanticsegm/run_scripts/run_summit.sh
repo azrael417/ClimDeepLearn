@@ -26,5 +26,5 @@ cd ${SWORK}
 
 #run
 cat $LSB_DJOB_HOSTFILE | sort | uniq | grep -v login | grep -v batch > host_list
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf.py
+mpirun -np 48 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf.py --lr 1e-5
 #mpirun -np 24 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./test_hvd.py
