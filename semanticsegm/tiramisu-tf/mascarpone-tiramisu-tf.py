@@ -158,7 +158,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 #Load Data
 def load_data(max_files):
     #images from directory
-    input_path = "./segm_h5_v3/"
+    input_path = "./segm_h5_v3_merged/"
     
     #look for labels and data files
     labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
@@ -211,25 +211,27 @@ class h5_input_reader(object):
 
         #data
         #begin=time.time()
-        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
-            #get shape info
-            shape = f['climate']['data'].shape
+        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
-                self.minvals = np.minimum(self.minvals, f['climate']['data_stats'][0,self.channels])
-                self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
+                #self.minvals = np.minimum(self.minvals, f['climate']['data_stats'][0,self.channels])
+                #self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
+                self.minvals = np.minimum(self.minvals, np.amin(f['climate']['data_stats'][:,0,self.channels],axis=0))
+                self.maxvals = np.maximum(self.maxvals, np.amax(f['climate']['data_stats'][:,1,self.channels],axis=0))
             #get data
-            data = f['climate']['data'][:,:,self.channels].astype(np.float32)
-            #data = data[:,:,self.channels]
+            #data = f['climate']['data'][:,:,self.channels].astype(np.float32)
+            data = f['climate']['data'][:,:,:,self.channels].astype(np.float32)
             #do min/max normalization
             for c in range(len(self.channels)):
-                data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+                #data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+                data[:,:,:,c] = (data[:,:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c]) 
                 
             #transposition necessary because we went to NCHW
-            data = np.transpose(data,[2,0,1])
+            #data = np.transpose(data,[2,0,1])
+            data = np.transpose(data,[0,3,1,2])
 
         #label
-        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
+        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False, libver="latest") as f:
             label = f['climate']['labels'][...].astype(np.int32)
         #end=time.time()
         #print "Time to read image %.3f s" % (end-begin)
