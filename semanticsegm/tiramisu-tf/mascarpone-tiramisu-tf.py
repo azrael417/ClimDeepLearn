@@ -392,7 +392,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
 
             #DEBUG
             batch = sess.run(next_elem[0], feed_dict={handle: trn_handle})
-            print(batch)
+            print(batch.shape)
             #DEBUG
 
 #            #do the training
