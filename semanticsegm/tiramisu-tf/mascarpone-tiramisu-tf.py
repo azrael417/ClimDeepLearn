@@ -156,94 +156,103 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
 
 #Load Data
-def load_data(max_files):
+def load_data(max_files, comm_size, comm_rank):
     #images from directory
     input_path = "./segm_h5_v3_merged/"
     
     #look for labels and data files
-    labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
-    datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
     #we will choose to load only the first p files
-    labelfiles = labelfiles[:max_files]
-    datafiles = datafiles[:max_files] 
+    files = files[:max_files]
     
-    #only use the data where we have labels for and vice versa
-    datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
-    labelfiles = [x for x in labelfiles if x.replace("labels","data") in datafiles]
+    #shard by ranks
+    start = comm_rank*comm_size
+    end = np.min([len(files),start+comm_size])
+    files = files[start:end]
     
     #convert to numpy
-    datafiles = np.asarray(datafiles)
-    labelfiles = np.asarray(labelfiles)
+    files = np.asarray(files)
 
     #PERMUTATION OF DATA
     np.random.seed(12345)
-    shuffle_indices = np.random.permutation(len(datafiles))
+    shuffle_indices = np.random.permutation(len(files))
     np.save("./shuffle_indices.npy", shuffle_indices)
-    datafiles = datafiles[shuffle_indices]
-    labelfiles = labelfiles[shuffle_indices]
+    files = files[shuffle_indices]
     
     #Create train/validation/test split
-    size = len(datafiles)
-    trn_data = datafiles[:int(0.8 * size)]
-    trn_labels = labelfiles[:int(0.8 * size)]
-    tst_data = datafiles[int(0.8 * size):int(0.9 * size)]
-    tst_labels = labelfiles[int(0.8 * size):int(0.9 * size)]
-    val_data = datafiles[int(0.9 * size):]
-    val_labels = labelfiles[int(0.9 * size):]
-        
-    return input_path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels
-
-
-class h5_input_reader(object):
+    size = len(files)
+    trn_data = files[:int(0.8 * size)]
+    tst_data = files[int(0.8 * size):int(0.9 * size)]
+    val_data = files[int(0.9 * size):]
     
-    def __init__(self, path, channels, update_on_read=False):
+    return input_path, trn_data, val_data, tst_data
+
+
+class h5_input_manager(object):
+    
+    def __init__(self, path, filelist, channels, update_on_read=False):
         self.path = path
         self.channels = channels
         self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
         self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
         self.update_on_read = update_on_read
-    
-    def read(self, datafile, labelfile):
+        self.filelist = filelist
         
-        #set shape to none in the beginning
-        shape = None
+        #create list of file handles
+        self.files={}
+        for fname in self.filelist:
+            self.files[fname] = h5.File(self.path+'/'+fname, "r", libver="latest")
+        
+        #get number of samples per file
+        self.num_samples={}
+        for fname in self.filelist:
+            self.num_samples[fname] = self.files[fname]['climate']['data'].shape[0]
+            
+    def __del__(self):
+        for fname in self.files:
+            self.files[fname].close()
+    
+    def generate_tuples(self):
+        result=[]
+        for fname in self.filelist:
+            result+=[(fname,id) for id in range(self.num_examples[fname])]
+        return result
+    
+    def read(self, datatuple):
+        
+        #extract tuple information
+        fname = datatuple[0]
+        index = datatuple[1]
+        
+        #ref to handle
+        f = self.files[fname]
 
-        #data
-        #begin=time.time()
-        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
-            #get min and max values and update stored values
-            if self.update_on_read:
-                #self.minvals = np.minimum(self.minvals, f['climate']['data_stats'][0,self.channels])
-                #self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
-                self.minvals = np.minimum(self.minvals, np.amin(f['climate']['data_stats'][:,0,self.channels],axis=0))
-                self.maxvals = np.maximum(self.maxvals, np.amax(f['climate']['data_stats'][:,1,self.channels],axis=0))
-            #get data
-            #data = f['climate']['data'][:,:,self.channels].astype(np.float32)
-            data = f['climate']['data'][:,:,:,self.channels].astype(np.float32)
-            #do min/max normalization
-            for c in range(len(self.channels)):
-                #data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-                data[:,:,:,c] = (data[:,:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c]) 
+        #update min/max?
+        if self.update_on_read:
+            self.minvals = np.minimum(self.minvals, f['climate']['stats'][index,self.channels,0])
+            self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][index,self.channels,1])
+
+        #get data
+        data = f['climate']['data'][index,self.channels,:,:].astype(np.float32)
+        #do min/max normalization
+        for c in range(len(self.channels)):
+            data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
                 
-            #transposition necessary because we went to NCHW
-            #data = np.transpose(data,[2,0,1])
-            data = np.transpose(data,[0,3,1,2])
-
-        #label
-        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False, libver="latest") as f:
-            label = f['climate']['labels'][...].astype(np.int32)
+        #get label
+        label = f['climate']['labels'][index,:,:].astype(np.int32)
         #end=time.time()
         #print "Time to read image %.3f s" % (end-begin)
 
         return data, label
 
 
-def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
-    dataset = tf.data.Dataset.from_tensor_slices((datafilelist, labelfilelist))
-    if comm_size>1:
-        dataset = dataset.shard(comm_size, comm_rank)
-    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5ir.read, [dataname, labelname], [tf.float32, tf.int32])))
+def create_dataset(h5manager, batchsize, num_epochs, shuffle=False):
+    #get list of files with number of samples
+    datatuples=h5manager.generate_tuples()
+    
+    dataset = tf.data.Dataset.from_tensor_slices(datatuples)
+    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5ir.read, [datatuple], [tf.float32, tf.int32])))
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.batch(batchsize)
@@ -284,19 +293,18 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
+    path, trn_data, val_data, tst_data = load_data(trn_sz,comm_size,comm_rank)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
     
     with training_graph.as_default():
         #create datasets
-        datafiles = tf.placeholder(tf.string, shape=[None])
-        labelfiles = tf.placeholder(tf.string, shape=[None])
-        trn_reader = h5_input_reader(path, channels, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, datafiles, labelfiles, batch, num_epochs, comm_size, comm_rank, True)
-        val_reader = h5_input_reader(path, channels, update_on_read=False)
-        val_dataset = create_dataset(val_reader, datafiles, labelfiles, batch, 1, comm_size, comm_rank)
+        #files = tf.placeholder(tf.string, shape=[None])
+        trn_manager = h5_input_manager(path, trn_data, channels, update_on_read=True)
+        trn_dataset = create_dataset(trn_manager, batch, num_epochs, shuffle=True)
+        val_manager = h5_input_reader(path, val_data, channels, update_on_read=False)
+        val_dataset = create_dataset(val_manager, batch, 1, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
@@ -386,13 +394,15 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
-            sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
-            sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
+            sess.run(trn_init_op, feed_dict={handle: trn_handle})
+            sess.run(val_init_op, feed_dict={handle: val_handle})
 
 
             #DEBUG
             batch = sess.run(next_elem[0], feed_dict={handle: trn_handle})
-            print(batch)
+            print(batch.shape)
+            batch = sess.run(next_elem[0], feed_dict={handle: trn_handle})
+            print(batch.shape)
             #DEBUG
 
 #            #do the training
