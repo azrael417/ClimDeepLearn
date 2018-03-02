@@ -166,6 +166,8 @@ def load_data(max_files, comm_size, comm_rank):
     end = np.min([len(files),start+comm_size])
     files = files[start:end]
     
+    print(files)
+    
     #convert to numpy
     files = np.asarray(files)
 
