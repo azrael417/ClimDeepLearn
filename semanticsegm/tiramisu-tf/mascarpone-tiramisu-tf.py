@@ -163,6 +163,8 @@ def load_data(comm_size, comm_rank, max_files):
     #we will choose to load only the first p files
     files = files[:max_files]
     
+    print(files)
+    
     #shard by ranks
     start = comm_rank*comm_size
     end = np.min([len(files),start+comm_size])
