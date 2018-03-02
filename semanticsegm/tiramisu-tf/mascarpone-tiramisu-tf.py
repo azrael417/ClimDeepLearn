@@ -211,7 +211,7 @@ class h5_input_manager(object):
     def generate_tuples(self):
         result=[]
         for fname in self.filelist:
-            result+=[(fname,id) for id in range(self.num_examples[fname])]
+            result+=[(fname,id) for id in range(self.num_samples[fname])]
         return result
     
     def read(self, datatuple):
