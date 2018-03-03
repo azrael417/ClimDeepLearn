@@ -20,17 +20,18 @@ export LD_LIBRARY_PATH=/sw/summit/diags/openmpi-3.0.0-nocuda/lib:/sw/summit/cuda
 #script in place
 mkdir -p ${SWORK}/run/
 cp stage_in.sh ${SWORK}/run/
-cp ../tiramisu-tf/mascarpone-tiramisu-tf.py ${SWORK}/run/
+cp ../tiramisu-tf/mascarpone-tiramisu-tf*.py ${SWORK}/run/
 
 #step in
 cd ${SWORK}/run/
 
 #datadir
-datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_uncompressed"
+datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
+#scratchdir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
 scratchdir="/xfs/scratch/"$(whoami)"/data"
 
 #run
 cat $LSB_DJOB_HOSTFILE | sort | uniq | grep -v login | grep -v batch > host_list
 mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir}
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf.py --lr 1e-5 --datadir ${scratchdir}
-#mpirun -np 24 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./test_hvd.py
+#mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf.py --lr 1e-5 --datadir ${scratchdir}
+mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${scratchdir}
