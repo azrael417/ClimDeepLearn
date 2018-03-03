@@ -1,6 +1,6 @@
 #!/bin/bash
-#BSUB -nnodes 4
-#BSUB -W 120 
+#BSUB -nnodes 8
+#BSUB -W 120
 #BSUB -P CSC275PRABHAT
 #BSUB -alloc_flags "smt4 nvme"
 #BSUB -J climseg_training
@@ -18,20 +18,20 @@ source activate tensorflow
 export LD_LIBRARY_PATH=/sw/summit/diags/openmpi-3.0.0-nocuda/lib:/sw/summit/cuda/9.1.85/lib64:${HOME}/Anaconda/nvidia-stuff/nccl_2.2.10a0-1+cuda9.0_ppc64le/lib:${HOME}/anaconda3/envs/tensorflow/lib:${HOME}/anaconda3/envs/tensorflow/lib/python2.7/site-packages/horovod/tensorflow:${LD_LIBRARY_PATH}
 
 #script in place
-mkdir -p ${SWORK}/run/
-cp stage_in.sh ${SWORK}/run/
-cp ../tiramisu-tf/mascarpone-tiramisu-tf*.py ${SWORK}/run/
+mkdir -p ${SWORK}/run_j${LSB_JOBID}/
+cp stage_in.sh ${SWORK}/run_j${LSB_JOBID}/
+cp ../tiramisu-tf/mascarpone-tiramisu-tf*.py ${SWORK}/run_j${LSB_JOBID}/
 
 #step in
-cd ${SWORK}/run/
+cd ${SWORK}/run_j${LSB_JOBID}/
 
 #datadir
 datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
 #scratchdir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
-scratchdir="/xfs/scratch/"$(whoami)"/data"
+#scratchdir="/xfs/scratch/"$(whoami)"/data"
 
 #run
-cat $LSB_DJOB_HOSTFILE | sort | uniq | grep -v login | grep -v batch > host_list
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir}
+cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
+#mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir}
 #mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf.py --lr 1e-5 --datadir ${scratchdir}
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${scratchdir}
+mpirun -np 48 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${datadir}

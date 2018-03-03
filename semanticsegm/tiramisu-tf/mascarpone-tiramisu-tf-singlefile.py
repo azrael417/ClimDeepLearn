@@ -174,7 +174,7 @@ def load_data(input_path, comm_size, comm_rank, max_files):
     tst_data = files[int(0.8 * size):int(0.9 * size)]
     val_data = files[int(0.9 * size):]
     
-    return input_path, trn_data, val_data, tst_data
+    return trn_data, val_data, tst_data
 
 
 class h5_input_reader(object):
@@ -189,7 +189,7 @@ class h5_input_reader(object):
     def read(self, datafile):
         
         #data
-        begin_time = time.time()
+        #begin_time = time.time()
         with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
@@ -205,8 +205,8 @@ class h5_input_reader(object):
             label = f['climate']['labels'][...].astype(np.int32)
 
         #time
-        end_time = time.time()
-        print "Time to read image %.3f s" % (end_time-begin_time)
+        #end_time = time.time()
+        #print "Time to read image %.3f s" % (end_time-begin_time)
 
         return data, label
 
@@ -255,17 +255,30 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
+    trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
     
+    #print some stats
+    if comm_rank==0:
+        print("Learning Rate: ", learning_rate)
+        print("Num workers: ", comm_size)
+        print("Local batch size: ", batch)
+        if dtype == tf.float32:
+            print("Precision: FP32")
+        else:
+            print("Precision: FP16")
+        print("Channels: ", channels)
+        print("Num training samples: ", trn_data.shape[0])
+        print("Num validation samples: ", val_data.shape[0])
+
     with training_graph.as_default():
         #create datasets
         #files = tf.placeholder(tf.string, shape=[None])
-        trn_reader = h5_input_reader(path, channels, update_on_read=True)
+        trn_reader = h5_input_reader(input_path, channels, update_on_read=True)
         trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
-        val_reader = h5_input_reader(path, channels, update_on_read=False)
+        val_reader = h5_input_reader(input_path, channels, update_on_read=False)
         val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
         
         #create iterators
