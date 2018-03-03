@@ -215,9 +215,9 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
     dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if comm_size>1:
         dataset = dataset.shard(comm_size, comm_rank)
-    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32])))
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
+    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32])))
     dataset = dataset.batch(batchsize)
     dataset = dataset.repeat(num_epochs)
     
