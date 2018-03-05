@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
+from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
 use_scipy=True
@@ -22,6 +23,31 @@ except:
 #GLOBAL CONSTANTS
 image_height =  768 
 image_width = 1152
+
+
+def focal_loss(prediction_tensor, target_tensor, alpha=0.25, gamma=2):
+    r"""Compute focal loss for predictions.
+        Multi-labels Focal loss formula:
+            FL = -alpha * (z-p)^gamma * log(p) -(1-alpha) * p^gamma * log(1-p)
+                 ,which alpha = 0.25, gamma = 2, p = softmax(x), z = target_tensor.
+    Args:
+     prediction_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing the predicted logits for each class
+     target_tensor: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing one-hot encoded classification targets
+     alpha: A scalar tensor for focal loss alpha hyper-parameter
+     gamma: A scalar tensor for focal loss gamma hyper-parameter
+    Returns:
+        loss: A (scalar) tensor representing the value of the loss function
+    """
+    #subtract the mean before softmaxing
+    softmax_p = tf.nn.softmax( prediction_tensor - tf.mean( prediction_tensor, axis=1 ), axis=1 )
+    zeros = array_ops.zeros_like(softmax_p, dtype=softmax_p.dtype)
+    pos_p_sub = array_ops.where(target_tensor >= softmax_p, target_tensor - softmax_p, zeros)
+    neg_p_sub = array_ops.where(target_tensor > zeros, zeros, softmax_p)
+    per_entry_cross_ent = - alpha * (pos_p_sub ** gamma) * tf.log(tf.clip_by_value(softmax_p, 1e-8, 1.)) \
+                          - (1. - alpha) * (neg_p_sub ** gamma) * tf.log(tf.clip_by_value(1. - softmax_p, 1e-8, 1.))
+    return tf.reduce_sum(per_entry_cross_ent)
 
 
 def conv(x, nf, sz, wd, stride=1): 
