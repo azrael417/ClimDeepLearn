@@ -1,5 +1,5 @@
 #!/bin/bash
-#BSUB -nnodes 8
+#BSUB -nnodes 4
 #BSUB -W 120
 #BSUB -P CSC275PRABHAT
 #BSUB -alloc_flags "smt4 nvme"
@@ -34,4 +34,4 @@ datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 #mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir}
 #mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 python ./mascarpone-tiramisu-tf.py --lr 1e-5 --datadir ${scratchdir}
-mpirun -np 48 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${datadir}
+mpirun -np 24 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${datadir}

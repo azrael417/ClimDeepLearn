@@ -270,6 +270,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         else:
             print("Precision: FP16")
         print("Channels: ", channels)
+        print("Loss weights: ", weights)
         print("Num training samples: ", trn_data.shape[0])
         print("Num validation samples: ", val_data.shape[0])
 
@@ -307,7 +308,12 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         weighted_labels_one_hot = tf.multiply(labels_one_hot, weight)
         loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
         #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
-        
+
+        #stuff for debugging loss
+        prediction_am = tf.argmax(prediction, axis=3)
+        prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
+        prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
+
         #set up global step
         global_step = tf.train.get_or_create_global_step()
         
@@ -381,9 +387,11 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
+                    _, _, train_steps, tmp_loss, tmp_pred_hist = sess.run([train_op, iou_update_op, global_step, loss, prediction_hist], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
+
+                    print(tmp_pred_hist)
                     
                     if train_steps_in_epoch > 0:
                         #print step report
@@ -469,6 +477,10 @@ if __name__ == '__main__':
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--datadir",type=str,help="Path to input data")
     parsed = AP.parse_args()
-    weights = [1./x for x in parsed.frequencies]
+
+    #play with weighting
+    weights = np.sqrt([1./x for x in parsed.frequencies])
     weights /= np.sum(weights)
+    
+    #invoke main function
     main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr)
