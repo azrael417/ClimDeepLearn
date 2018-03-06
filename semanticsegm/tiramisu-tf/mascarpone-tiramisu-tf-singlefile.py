@@ -41,9 +41,15 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
         loss: A (scalar) tensor representing the value of the loss function
     """
     #subtract the mean before softmaxing
-    predictions = tf.nn.softmax(logits, axis=3)
+    pred = tf.nn.softmax(logits, axis=3)
+    #taking the log with some care
+    log_pred = tf.log(tf.clip_values(pred,1e-8,1.))
+    #compute weighted labels:
+    weighted_onehot_labels = tf.multiply(onehot_labels,(1-pred)**gamma)
+    #compute the product of logs, weights and reweights
+    prod = -1. * tf.multiply(tf.multiply(weighted_onehot_labels, log_pred), alpha)
     
-    return tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels, logits=logits, weights=tf.multiply((1-predictions)**gamma,alpha))
+    return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
 
 def conv(x, nf, sz, wd, stride=1): 
@@ -333,9 +339,9 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         #loss = tf.reduce_mean(tf.reduce_sum(-1 * tf.multiply(weighted_labels_one_hot, tf.log(prediction)), axis = 3))
         #loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
         #loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=weighted_labels_one_hot,logits=logit, dim=3))
-        loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+        #loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
         #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
-        #loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=weight, gamma=0.)
+        loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
 
         #stuff for debugging loss
         #prediction_am = tf.argmax(prediction, axis=3)
@@ -370,7 +376,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         
         #checkpointing
         if comm_rank == 0:
-            checkpoint_save_freq = num_steps_per_epoch * 10
+            checkpoint_save_freq = num_steps_per_epoch * 2
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
             hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
             #create image dir if not exists

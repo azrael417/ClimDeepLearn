@@ -33,5 +33,5 @@ datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 #mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir}
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-4 --datadir ${datadir} --frequencies 1. 1. 1.
-#mpirun -np 24 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-5 --datadir ${datadir}
+#mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-4 --datadir ${datadir} --frequencies 1. 1. 1.
+mpirun -np 24 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 6 python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-4 --datadir ${datadir}
