@@ -25,29 +25,25 @@ image_height =  768
 image_width = 1152
 
 
-def focal_loss(prediction_tensor, target_tensor, alpha=0.25, gamma=2):
+def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     r"""Compute focal loss for predictions.
         Multi-labels Focal loss formula:
-            FL = -alpha * (z-p)^gamma * log(p) -(1-alpha) * p^gamma * log(1-p)
-                 ,which alpha = 0.25, gamma = 2, p = softmax(x), z = target_tensor.
+            FL = -sum_i alpha_i * y_i * (1-p_i)^gamma * log(p_i)
+                 ,which alpha = 0.25, gamma = 2, p = predictions, y = target_tensor.
     Args:
-     prediction_tensor: A float tensor of shape [batch_size, num_anchors,
-        num_classes] representing the predicted logits for each class
-     target_tensor: A float tensor of shape [batch_size, num_anchors,
+     onehot_labels: A float tensor of shape [batch_size, num_anchors,
         num_classes] representing one-hot encoded classification targets
+     logits: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing the prediction logits for each class
      alpha: A scalar tensor for focal loss alpha hyper-parameter
      gamma: A scalar tensor for focal loss gamma hyper-parameter
     Returns:
         loss: A (scalar) tensor representing the value of the loss function
     """
     #subtract the mean before softmaxing
-    softmax_p = tf.nn.softmax( prediction_tensor - tf.mean( prediction_tensor, axis=1 ), axis=1 )
-    zeros = array_ops.zeros_like(softmax_p, dtype=softmax_p.dtype)
-    pos_p_sub = array_ops.where(target_tensor >= softmax_p, target_tensor - softmax_p, zeros)
-    neg_p_sub = array_ops.where(target_tensor > zeros, zeros, softmax_p)
-    per_entry_cross_ent = - alpha * (pos_p_sub ** gamma) * tf.log(tf.clip_by_value(softmax_p, 1e-8, 1.)) \
-                          - (1. - alpha) * (neg_p_sub ** gamma) * tf.log(tf.clip_by_value(1. - softmax_p, 1e-8, 1.))
-    return tf.reduce_sum(per_entry_cross_ent)
+    predictions = tf.nn.softmax(logits, axis=3)
+    
+    return tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels, logits=logits, weights=tf.multiply((1-predictions)**gamma,alpha))
 
 
 def conv(x, nf, sz, wd, stride=1): 
@@ -168,12 +164,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
         if x.dtype != tf.float32:
             x = tf.cast(x, tf.float32)
         
-        #create weight tensor
-        ww = np.zeros((1,1,1,len(loss_weights)))
-        ww[0,0,0,:] = loss_weights[:]
-        weights = tf.constant(ww, dtype=tf.float32)
-        
-    return x, tf.nn.softmax(x), weights
+    return x, tf.nn.softmax(x)
 
 
 #Load Data
@@ -205,12 +196,13 @@ def load_data(input_path, comm_size, comm_rank, max_files):
 
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, update_on_read=False):
+    def __init__(self, path, channels, weights, update_on_read=False):
         self.path = path
         self.channels = channels
         self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
         self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
         self.update_on_read = update_on_read
+        self.weights = weights
     
     def read(self, datafile):
         
@@ -230,11 +222,16 @@ class h5_input_reader(object):
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
 
+            #get weights
+            weights = np.zeros(label.shape, dtype=np.float32)
+            for idx,w in enumerate(self.weights):
+                weights[np.where(label==idx)]=w
+
         #time
         #end_time = time.time()
         #print "Time to read image %.3f s" % (end_time-begin_time)
 
-        return data, label
+        return data, label, weights
 
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
@@ -243,7 +240,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = dataset.shard(comm_size, comm_rank)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32])))
+    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
     dataset = dataset.batch(batchsize)
     dataset = dataset.repeat(num_epochs)
     
@@ -288,31 +285,32 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     
     #print some stats
     if comm_rank==0:
-        print("Learning Rate: ", learning_rate)
-        print("Num workers: ", comm_size)
-        print("Local batch size: ", batch)
+        print("Learning Rate: {}".format(learning_rate))
+        print("Num workers: {}".format(comm_size))
+        print("Local batch size: {}".format(batch))
         if dtype == tf.float32:
-            print("Precision: FP32")
+            print("Precision: {}".format("FP32"))
         else:
-            print("Precision: FP16")
-        print("Channels: ", channels)
-        print("Loss weights: ", weights)
-        print("Num training samples: ", trn_data.shape[0])
-        print("Num validation samples: ", val_data.shape[0])
+            print("Precision: {}".format("FP16"))
+        print("Channels: {}".format(channels))
+        print("Loss weights: {}".format(weights))
+        print("Num training samples: {}".format(trn_data.shape[0]))
+        print("Num validation samples: {}".format(val_data.shape[0]))
 
     with training_graph.as_default():
         #create datasets
         #files = tf.placeholder(tf.string, shape=[None])
-        trn_reader = h5_input_reader(input_path, channels, update_on_read=True)
+        trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
         trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
-        val_reader = h5_input_reader(input_path, channels, update_on_read=False)
+        val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
         val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32), 
+        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32, tf.float32), 
                                                        ((batch, len(channels), image_height, image_width),
-                                                       (batch, image_height, image_width))
+                                                        (batch, image_height, image_width),
+                                                        (batch, image_height, image_width))
                                                        )
         next_elem = iterator.get_next()
         
@@ -327,18 +325,23 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction, weight = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
         
         #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-        weighted_labels_one_hot = tf.multiply(labels_one_hot, weight)
-        loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
-        #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit,weights=weight)
+        #weighted_labels_one_hot = labels_one_hot * 0.3333 #tf.multiply(labels_one_hot, 1.0) #tf.multiply(labels_one_hot, weight)
+        #loss = tf.reduce_mean(tf.reduce_sum(-1 * tf.multiply(weighted_labels_one_hot, tf.log(prediction)), axis = 3))
+        #loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
+        #loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=weighted_labels_one_hot,logits=logit, dim=3))
+        loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+        #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
+        #loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=weight, gamma=0.)
 
         #stuff for debugging loss
-        prediction_am = tf.argmax(prediction, axis=3)
-        prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
-        prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
+        #prediction_am = tf.argmax(prediction, axis=3)
+        #prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
+        #prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
+        #labels_hist = tf.reduce_mean(labels_one_hot, axis=[0,1,2])
 
         #set up global step
         global_step = tf.train.get_or_create_global_step()
@@ -413,11 +416,9 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                 #training loop
                 try:
                     #construct feed dict
-                    _, _, train_steps, tmp_loss, tmp_pred_hist = sess.run([train_op, iou_update_op, global_step, loss, prediction_hist], feed_dict={handle: trn_handle})
+                    _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
-
-                    print(tmp_pred_hist)
                     
                     if train_steps_in_epoch > 0:
                         #print step report
@@ -505,7 +506,7 @@ if __name__ == '__main__':
     parsed = AP.parse_args()
 
     #play with weighting
-    weights = np.sqrt([1./x for x in parsed.frequencies])
+    weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
     
     #invoke main function
