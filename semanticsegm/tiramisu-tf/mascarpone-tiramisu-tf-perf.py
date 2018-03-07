@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
+from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
 use_scipy=True
@@ -21,13 +22,82 @@ except:
     horovod = False
 
 #GLOBAL CONSTANTS
-#image_height = 96
-#image_width = 144
 image_height =  768 
 image_width = 1152
-#comm_rank = 0
-#comm_local_rank = 0
-#comm_size = 1
+
+
+def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
+    r"""Compute focal loss for predictions.
+        Multi-labels Focal loss formula:
+            FL = -sum_i alpha_i * y_i * (1-p_i)^gamma * log(p_i)
+                 ,which alpha = 0.25, gamma = 2, p = predictions, y = target_tensor.
+    Args:
+     onehot_labels: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing one-hot encoded classification targets
+     logits: A float tensor of shape [batch_size, num_anchors,
+        num_classes] representing the prediction logits for each class
+     alpha: A scalar tensor for focal loss alpha hyper-parameter
+     gamma: A scalar tensor for focal loss gamma hyper-parameter
+    Returns:
+        loss: A (scalar) tensor representing the value of the loss function
+    """
+    #subtract the mean before softmaxing
+    pred = tf.nn.softmax(logits, axis=3)
+    #taking the log with some care
+    log_pred = tf.log(tf.clip_by_value(pred,1e-8,1.))
+    #compute weighted labels:
+    weighted_onehot_labels = tf.multiply(onehot_labels,(1-pred)**gamma)
+    #compute the product of logs, weights and reweights
+    prod = -1. * tf.multiply(tf.multiply(weighted_onehot_labels, log_pred), alpha)
+    
+    return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
+
+
+def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=None, LARC_epsilon=1.):
+    #make sure code works for running w/o LARC:
+    start_lr = 1.0 if LARC_eta is not None and isinstance(LARC_eta, float) else learning_rate
+
+    #set up optimizers
+    if opt_type == "Adam":
+        optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
+    elif opt_type == "RMSProp":
+        optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
+    elif opt_type == "SGD":
+        optim = tf.train.MomentumOptimizer(learning_rate=start_lr, momentum=momentum)
+    else:
+        raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
+        
+    #horovod wrapper
+    if horovod:
+        optim = hvd.DistributedOptimizer(optim)
+        
+    # LARC gradient re-scaling
+    if LARC_eta is not None and isinstance(LARC_eta, float):
+        #compute gradients
+        grads_and_vars = optim.compute_gradients(loss)
+        for idx, (g, v) in enumerate(grads_and_vars):
+            if g is not None:
+                v_norm = tf.norm(tensor=v, ord=2)
+                g_norm = tf.norm(tensor=g, ord=2)
+                larc_local_lr = tf.cond(
+                    pred = tf.logical_and( tf.not_equal(v_norm, tf.constant(0.0)), tf.not_equal(g_norm, tf.constant(0.0)) ),
+                    true_fn = lambda: LARC_eta * v_norm / g_norm,
+                    false_fn = lambda: LARC_epsilon)
+                if LARC_mode=="scale":
+                    effective_lr = larc_local_lr*learning_rate
+                else:
+                    effective_lr = tf.minimum(larc_local_lr, learning_rate)
+                #multiply gradients
+                grads_and_vars[idx] = (tf.scalar_mul(effective_lr, g), v)
+
+        #apply gradients:
+        train_op = optim.apply_gradients(grads_and_vars, global_step=global_step)
+    else:
+        #just call minimizer here
+        train_op = optim.minimize(loss, global_step=global_step)
+    
+    #return optimizer
+    return train_op
 
 
 def conv(x, nf, sz, wd, stride=1): 
@@ -100,6 +170,7 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training):
         x, added = dense_block(n,x,growth_rate,p,wd,training=training)
     return x
 
+
 def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
                                     initializer=None, regularizer=None,
                                     trainable=True,
@@ -112,6 +183,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
     if trainable and dtype != tf.float32:
         variable = tf.cast(variable, dtype)
     return variable
+
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
          growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
@@ -150,97 +222,82 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
 
 #Load Data
-def load_data(max_files):
-    #images from directory
-    #input_path = "/raid/Climate-large/segm_h5_v3/"
-    input_path = "/gpfs/alpinetds/world-shared/csc275/climdata"
-    
+def load_data(input_path, comm_size, comm_rank, max_files):
+
     #look for labels and data files
-    labelfiles = sorted([x for x in os.listdir(input_path) if x.startswith("label")])
-    datafiles = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
     
     #we will choose to load only the first p files
-    labelfiles = labelfiles[:max_files]
-    datafiles = datafiles[:max_files] 
-    
-    #only use the data where we have labels for
-    datafiles = [x for x in datafiles if x.replace("data","labels") in labelfiles]
+    files = files[:max_files]
     
     #convert to numpy
-    datafiles = np.asarray(datafiles)
-    labelfiles = np.asarray(labelfiles)
+    files = np.asarray(files)
 
     #PERMUTATION OF DATA
     np.random.seed(12345)
-    shuffle_indices = np.random.permutation(len(datafiles))
+    shuffle_indices = np.random.permutation(len(files))
     np.save("./shuffle_indices.npy", shuffle_indices)
-    datafiles = datafiles[shuffle_indices]
-    labelfiles = labelfiles[shuffle_indices]
+    files = files[shuffle_indices]
     
     #Create train/validation/test split
-    size = len(datafiles)
-    trn_data = datafiles[:int(0.8 * size)]
-    trn_labels = labelfiles[:int(0.8 * size)]
-    tst_data = datafiles[int(0.8 * size):int(0.9 * size)]
-    tst_labels = labelfiles[int(0.8 * size):int(0.9 * size)]
-    val_data = datafiles[int(0.9 * size):]
-    val_labels = labelfiles[int(0.9 * size):]
-        
-    return input_path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels
+    size = len(files)
+    trn_data = files[:int(0.8 * size)]
+    tst_data = files[int(0.8 * size):int(0.9 * size)]
+    val_data = files[int(0.9 * size):]
+
+    return trn_data, val_data, tst_data
 
 
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, update_on_read=False):
+    def __init__(self, path, channels, weights, update_on_read=False):
         self.path = path
         self.channels = channels
         self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
         self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
         self.update_on_read = update_on_read
+        self.weights = weights
     
-    def read(self, datafile, labelfile):
+    def read(self, datafile):
         nvtx.RangePush("Read Data", 2)
         
-        #set shape to none in the beginning
-        shape = None
-
         #data
-        #begin=time.time()
-        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False) as f:
-            #get shape info
-            shape = f['climate']['data'].shape
+        #begin_time = time.time()
+        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
-                self.minvals = np.minimum(self.minvals, f['climate']['data_stats'][0,self.channels])
-                self.maxvals = np.maximum(self.maxvals, f['climate']['data_stats'][1,self.channels])
+                self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
+                self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
-            data = f['climate']['data'][:,:,self.channels].astype(np.float32)
-            #data = data[:,:,self.channels]
+            data = f['climate']['data'][self.channels,:,:].astype(np.float32)
             #do min/max normalization
             for c in range(len(self.channels)):
-                data[:,:,c] = (data[:,:,c]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-                
-            #transposition necessary because we went to NCHW
-            data = np.transpose(data,[2,0,1])
-
-        #label
-        with h5.File(self.path+'/'+labelfile, "r", driver="core", backing_store=False) as f:
+                data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+   
+            #get label
             label = f['climate']['labels'][...].astype(np.int32)
-        #end=time.time()
-        #print "Time to read image %.3f s" % (end-begin)
+
+            #get weights
+            weights = np.zeros(label.shape, dtype=np.float32)
+            for idx,w in enumerate(self.weights):
+                weights[np.where(label==idx)]=w
+
+        #time
+        #end_time = time.time()
+        #print "Time to read image %.3f s" % (end_time-begin_time)
 
         nvtx.RangePop() # Load Data
 
-        return data, label
+        return data, label, weights
 
 
-def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
-    dataset = tf.data.Dataset.from_tensor_slices((datafilelist, labelfilelist))
+def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
+    dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if comm_size>1:
         dataset = dataset.shard(comm_size, comm_rank)
-    dataset = dataset.map(lambda dataname, labelname: tuple(tf.py_func(h5ir.read, [dataname, labelname], [tf.float32, tf.int32])))
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
+    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
     dataset = dataset.batch(batchsize)
     dataset = dataset.repeat(num_epochs)
     
@@ -248,7 +305,7 @@ def create_dataset(h5ir, datafilelist, labelfilelist, batchsize, num_epochs, com
 
 
 #main function
-def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
+def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate,loss_type):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -266,9 +323,8 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
     #parameters
     batch = 1
     channels = [0,1,2,10]
-    #blocks = [3,3,4,4,7,7,10]
     num_epochs = 3
-    dtype = tf.float16
+    dtype = tf.float32
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -281,25 +337,41 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    path, trn_data, trn_labels, val_data, val_labels, tst_data, tst_labels = load_data(trn_sz)
+    trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
+
+    #print some stats
+    if comm_rank==0:
+        print("Learning Rate: {}".format(learning_rate))
+        print("Num workers: {}".format(comm_size))
+        print("Local batch size: {}".format(batch))
+        if dtype == tf.float32:
+            print("Precision: {}".format("FP32"))
+        else:
+            print("Precision: {}".format("FP16"))
+        print("Channels: {}".format(channels))
+        print("Loss type: {}".format(loss_type))
+        print("Loss weights: {}".format(weights))
+        print("Num training samples: {}".format(trn_data.shape[0]))
+        print("Num validation samples: {}".format(val_data.shape[0]))
+
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create datasets
-        datafiles = tf.placeholder(tf.string, shape=[None])
-        labelfiles = tf.placeholder(tf.string, shape=[None])
-        trn_reader = h5_input_reader(path, channels, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, datafiles, labelfiles, batch, num_epochs, comm_size, comm_rank, True)
-        val_reader = h5_input_reader(path, channels, update_on_read=False)
-        val_dataset = create_dataset(val_reader, datafiles, labelfiles, batch, 1, comm_size, comm_rank)
+        #files = tf.placeholder(tf.string, shape=[None])
+        trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
+        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
+        val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
+        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32), 
+        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32, tf.float32), 
                                                        ((batch, len(channels), image_height, image_width),
-                                                       (batch, image_height, image_width))
+                                                        (batch, image_height, image_width),
+                                                        (batch, image_height, image_width))
                                                        )
         next_elem = iterator.get_next()
         
@@ -315,19 +387,29 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
 
         #set up model
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
-        loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
-        #if horovod:
-        #    loss_average = hvd.allreduce(loss)/comm_size
-        #else:
-        #    loss_average = loss
-        global_step = tf.train.get_or_create_global_step()
-        #set up optimizer
-        opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
-        if horovod:
-            opt = hvd.DistributedOptimizer(opt)
-        train_op = opt.minimize(loss, global_step=global_step)
-        #set up streaming metrics
+        
+        #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        loss = None
+        if loss_type == "weighted":
+            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+        elif loss_type == "focal":
+            loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
+        else:
+            raise ValueError("Error, loss type {} not supported.",format(loss_type))
+
+        #stuff for debugging loss
+        #prediction_am = tf.argmax(prediction, axis=3)
+        #prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
+        #prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
+        #labels_hist = tf.reduce_mean(labels_one_hot, axis=[0,1,2])
+
+        #set up global step
+        global_step = tf.train.get_or_create_global_step()
+
+        #set up optimizer
+        train_op = get_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
@@ -344,9 +426,9 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
         
-        #checkpointing
+        ##checkpointing
         #if comm_rank == 0:
-        #    checkpoint_save_freq = num_steps_per_epoch
+        #    checkpoint_save_freq = num_steps_per_epoch * 2
         #    checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
         #    hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
         #    #create image dir if not exists
@@ -376,12 +458,12 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
-            sess.run([init_op, init_local_op])#, options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+            sess.run([init_op, init_local_op])
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
-            sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
-            sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
+            sess.run(trn_init_op, feed_dict={handle: trn_handle})
+            sess.run(val_init_op, feed_dict={handle: val_handle})
 
             nvtx.RangePop() # TF Init
 
@@ -392,6 +474,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
             nvtx.RangePush("Training Loop", 4)
             nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
+            training_start_time = start_time
             while not sess.should_stop():
                 
                 #training loop
@@ -406,7 +489,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
                     
                     if train_steps_in_epoch > 0:
                         #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
+                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
                     else:
                         end_time = time.time()
                         #print epoch report
@@ -447,7 +530,7 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
                                 print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, eval_loss))
                                 iou_score = sess.run(iou_op)
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
-                                sess.run(val_init_op, feed_dict={handle: val_handle, datafiles: val_data, labelfiles: val_labels})
+                                sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
                         nvtx.RangePop() # Eval Loop
                                 
@@ -491,14 +574,19 @@ def main(blocks,weights,image_dir,checkpoint_dir,trn_sz):
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--blocks",default='3 3 4 4 7 7 10',type=str,help="Number of layers per block")
+    AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
+    AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--frequencies",default=[0.98,0.1,0.1],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
+    AP.add_argument("--datadir",type=str,help="Path to input data")
     parsed = AP.parse_args()
-    tmp = [int(x) for x in parsed.blocks.split()]
-    parsed.blocks = tmp
+
+    #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    main(blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz)
+
+    #invoke main function
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss)
