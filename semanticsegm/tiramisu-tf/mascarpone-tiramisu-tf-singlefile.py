@@ -52,6 +52,50 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
 
+def get_optimizer(opt_type, loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=None, LARC_epsilon=1.):
+    #make sure code works for running w/o LARC:
+    start_lr = 1.0 if LARC_eta is not None and isinstance(LARC_eta, float) else learning_rate
+
+    #set up optimizers
+    if opt_type == "Adam":
+        optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
+    elif opt_type == "RMSProp":
+        optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
+    else:
+        raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
+        
+    #horovod wrapper
+    optim = hvd.DistributedOptimizer(optim)
+        
+    # LARC gradient re-scaling
+    if LARC_eta is not None and isinstance(LARC_eta, float):
+        #compute gradients
+        grads_and_vars = optim.compute_gradients(loss)
+        for idx, (g, v) in enumerate(grads_and_vars):
+            if g is not None:
+                v_norm = tf.norm(tensor=v, ord=2)
+                g_norm = tf.norm(tensor=g, ord=2)
+                larc_local_lr = tf.cond(
+                    pred = tf.logical_and( tf.not_equal(v_norm, tf.constant(0.0)), tf.not_equal(g_norm, tf.constant(0.0)) ),
+                    true_fn = lambda: LARC_eta * v_norm / g_norm,
+                    false_fn = lambda: LARC_epsilon)
+                if LARC_mode=="scale":
+                    effective_lr = larc_local_lr*learning_rate
+                else:
+                    effective_lr = tf.min(larc_local_lr, learning_rate)
+                #multiply gradients
+                grads_and_vars[idx] = (tf.scalar_mul(effective_lr, g), v)
+
+        #apply gradients:
+        train_op = optim.apply_gradients(grads_and_vars, global_step=global_step)
+    else:
+        #just call minimizer here
+        train_op = optim.minimize(loss, global_step=global_step)
+    
+    #return optimizer
+    return train_op
+
+
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
                             padding='same', data_format='channels_first',
@@ -354,10 +398,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         global_step = tf.train.get_or_create_global_step()
         
         #set up optimizer
-        opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        if horovod:
-            opt = hvd.DistributedOptimizer(opt)
-        train_op = opt.minimize(loss, global_step=global_step)
+        train_op = get_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
