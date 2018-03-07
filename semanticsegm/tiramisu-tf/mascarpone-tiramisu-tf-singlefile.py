@@ -52,7 +52,7 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
 
-def get_optimizer(opt_type, loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=None, LARC_epsilon=1.):
+def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=None, LARC_epsilon=1.):
     #make sure code works for running w/o LARC:
     start_lr = 1.0 if LARC_eta is not None and isinstance(LARC_eta, float) else learning_rate
 
@@ -61,11 +61,14 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, LARC_mode="clip", 
         optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
     elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=start_lr)
+    elif opt_type == "SGD":
+        optim = tf.train.MomentumOptimizer(learning_rate=start_lr, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
         
     #horovod wrapper
-    optim = hvd.DistributedOptimizer(optim)
+    if horovod:
+        optim = hvd.DistributedOptimizer(optim)
         
     # LARC gradient re-scaling
     if LARC_eta is not None and isinstance(LARC_eta, float):
