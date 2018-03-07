@@ -85,7 +85,7 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_
                 if LARC_mode=="scale":
                     effective_lr = larc_local_lr*learning_rate
                 else:
-                    effective_lr = tf.min(larc_local_lr, learning_rate)
+                    effective_lr = tf.minimum(larc_local_lr, learning_rate)
                 #multiply gradients
                 grads_and_vars[idx] = (tf.scalar_mul(effective_lr, g), v)
 
