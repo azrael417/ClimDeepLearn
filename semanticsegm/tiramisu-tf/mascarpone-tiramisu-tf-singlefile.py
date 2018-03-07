@@ -43,7 +43,7 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     #subtract the mean before softmaxing
     pred = tf.nn.softmax(logits, axis=3)
     #taking the log with some care
-    log_pred = tf.log(tf.clip_values(pred,1e-8,1.))
+    log_pred = tf.log(tf.clip_by_value(pred,1e-8,1.))
     #compute weighted labels:
     weighted_onehot_labels = tf.multiply(onehot_labels,(1-pred)**gamma)
     #compute the product of logs, weights and reweights
@@ -254,7 +254,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate):
+def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate,loss_type):
     #init horovod
     comm_rank = 0 
     comm_local_rank = 0
@@ -299,6 +299,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         else:
             print("Precision: {}".format("FP16"))
         print("Channels: {}".format(channels))
+        print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
@@ -335,13 +336,13 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         
         #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-        #weighted_labels_one_hot = labels_one_hot * 0.3333 #tf.multiply(labels_one_hot, 1.0) #tf.multiply(labels_one_hot, weight)
-        #loss = tf.reduce_mean(tf.reduce_sum(-1 * tf.multiply(weighted_labels_one_hot, tf.log(prediction)), axis = 3))
-        #loss = tf.losses.softmax_cross_entropy(onehot_labels=weighted_labels_one_hot,logits=logit)
-        #loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=weighted_labels_one_hot,logits=logit, dim=3))
-        #loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
-        #loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],logits=logit)
-        loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
+        loss = None
+        if loss_type == "weighted":
+            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+        elif loss_type == "focal":
+            loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
+        else:
+            raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
         #stuff for debugging loss
         #prediction_am = tf.argmax(prediction, axis=3)
@@ -417,6 +418,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
             epoch = 1
             train_loss = 0.
             start_time = time.time()
+            training_start_time = start_time
             while not sess.should_stop():
                 
                 #training loop
@@ -428,7 +430,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     
                     if train_steps_in_epoch > 0:
                         #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch))
+                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
                     else:
                         end_time = time.time()
                         #print epoch report
@@ -508,6 +510,7 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
     parsed = AP.parse_args()
 
@@ -516,4 +519,4 @@ if __name__ == '__main__':
     weights /= np.sum(weights)
     
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss)

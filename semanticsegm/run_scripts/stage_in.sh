@@ -1,9 +1,18 @@
 #!/bin/bash
 
+#arguments: 
+#$1 - source dir
+#$2 - destination dir
+#$3 - how many files you shuffle
+
+echo "Stage-in started"
 echo "Creating directory"
 mkdir -p ${2}
-echo "Copying data"
-#cp -r ${1}/* ${2}/
-for x in $(ls ${1} | head -n 20); do
-    cp -r ${1}/${x} ${2}/
+echo "Get file list"
+FILELIST=$(ls -1  ${1}/data*| shuf -n ${3})
+echo "Copy"
+for f in $FILELIST; do
+    cp ${1}/${f} ${2}/
 done
+echo "Stage-in done"
+
