@@ -475,7 +475,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     
                     if train_steps_in_epoch > 0:
                         #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch, time.time() - training_start_time))
+                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch, time.time() - start_time))
                     else:
                         end_time = time.time()
                         #print epoch report
