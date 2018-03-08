@@ -3,6 +3,7 @@ import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
+from gradient_checkpointing.memory_saving_gradients import gradients
 use_scipy=True
 try:
     from scipy.misc import imsave
@@ -65,16 +66,26 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_
         optim = tf.train.MomentumOptimizer(learning_rate=start_lr, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
-        
-    #horovod wrapper
-    if horovod:
-        optim = hvd.DistributedOptimizer(optim)
-        
+    
+    params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+    #grads = tf.gradients(loss, params)
+    grads = gradients(loss, params, checkpoints='memory')
+
+    # ALL_REDUCE GRADIENTS
+    if horovod and hvd.size() > 1:
+        reduced_grads = []
+        for grad in grads:
+            if grad is not None:
+                reduced_grads.append(hvd.allreduce(grad))
+            else:
+                reduced_grads.append(None)
+    else:
+       reduced_grads = grads
+    gradparams = list(zip(grads, params))
+
     # LARC gradient re-scaling
     if LARC_eta is not None and isinstance(LARC_eta, float):
-        #compute gradients
-        grads_and_vars = optim.compute_gradients(loss)
-        for idx, (g, v) in enumerate(grads_and_vars):
+        for idx, (g, v) in enumerate(gradparams):
             if g is not None:
                 v_norm = tf.norm(tensor=v, ord=2)
                 g_norm = tf.norm(tensor=g, ord=2)
@@ -87,15 +98,9 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_
                 else:
                     effective_lr = tf.minimum(larc_local_lr, learning_rate)
                 #multiply gradients
-                grads_and_vars[idx] = (tf.scalar_mul(effective_lr, g), v)
+                gradparams[idx] = (tf.scalar_mul(effective_lr, g), v)
 
-        #apply gradients:
-        train_op = optim.apply_gradients(grads_and_vars, global_step=global_step)
-    else:
-        #just call minimizer here
-        train_op = optim.minimize(loss, global_step=global_step)
-    
-    #return optimizer
+    train_op = optim.apply_gradients(gradparams, global_step=global_step)
     return train_op
 
 
@@ -315,10 +320,10 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
     #parameters
-    batch = 1
+    batch = 4
     channels = [0,1,2,10]
     num_epochs = 150
-    dtype = tf.float32
+    dtype = tf.float16
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
