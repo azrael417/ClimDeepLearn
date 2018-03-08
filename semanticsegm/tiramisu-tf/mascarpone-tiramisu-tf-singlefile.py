@@ -237,6 +237,14 @@ def load_data(input_path, comm_size, comm_rank, max_files):
     shuffle_indices = np.random.permutation(len(files))
     np.save("./shuffle_indices.npy", shuffle_indices)
     files = files[shuffle_indices]
+
+    #shard the stuff on the node:
+    comm_local_rank = hvd.local_rank()
+    comm_local_size = hvd.local_size()
+    files_per_rank = len(files) // comm_local_size
+    start = comm_local_rank * files_per_rank
+    end = np.min([start+files_per_rank, len(files)])
+    files = files[start:end]
     
     #Create train/validation/test split
     size = len(files)

@@ -36,5 +36,5 @@ scratchdir="/xfs/scratch/"$(whoami)"/data"
 
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
-mpirun -np 1 --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir} 1000
+mpirun -np ${nnodes} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir} 1000
 mpirun -np ${nprocs} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode ${nprocspn} python ./mascarpone-tiramisu-tf-singlefile.py --lr 1e-4 --datadir ${scratchdir} |& tee out.${LSB_JOBID}
