@@ -237,12 +237,6 @@ def load_data(input_path, comm_size, comm_rank, max_files):
     shuffle_indices = np.random.permutation(len(files))
     np.save("./shuffle_indices.npy", shuffle_indices)
     files = files[shuffle_indices]
-
-    #shard the stuff:
-    files_per_rank = len(files) // comm_size
-    start = comm_rank * files_per_rank
-    end = np.min([start+files_per_rank, len(files)])
-    files = files[start:end]
     
     #Create train/validation/test split
     size = len(files)
@@ -295,6 +289,8 @@ class h5_input_reader(object):
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
     dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
+    if comm_size > 1:
+        dataset = dataset.shard(comm_size, comm_rank)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
@@ -361,9 +357,9 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         #create datasets
         #files = tf.placeholder(tf.string, shape=[None])
         trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
+        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
         val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
-        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
+        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
