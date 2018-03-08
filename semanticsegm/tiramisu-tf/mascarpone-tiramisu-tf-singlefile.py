@@ -238,11 +238,9 @@ def load_data(input_path, comm_size, comm_rank, max_files):
     np.save("./shuffle_indices.npy", shuffle_indices)
     files = files[shuffle_indices]
 
-    #shard the stuff on the node:
-    comm_local_rank = hvd.local_rank()
-    comm_local_size = hvd.local_size()
-    files_per_rank = len(files) // comm_local_size
-    start = comm_local_rank * files_per_rank
+    #shard the stuff:
+    files_per_rank = len(files) // comm_size
+    start = comm_rank * files_per_rank
     end = np.min([start+files_per_rank, len(files)])
     files = files[start:end]
     
@@ -297,8 +295,6 @@ class h5_input_reader(object):
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
     dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
-    if comm_size>1:
-        dataset = dataset.shard(comm_size, comm_rank)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
@@ -314,11 +310,13 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     comm_rank = 0 
     comm_local_rank = 0
     comm_size = 1
+    comm_local_size = 1
     if horovod:
         hvd.init()
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
+        comm_local_size = hvd.local_size()
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
@@ -339,7 +337,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
+    trn_data, val_data, tst_data = load_data(input_path,comm_local_size,comm_local_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
