@@ -294,7 +294,7 @@ class h5_input_reader(object):
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
     dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
-    if comm_size>1:
+    if comm_size > 1:
         dataset = dataset.shard(comm_size, comm_rank)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
@@ -311,11 +311,13 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     comm_rank = 0 
     comm_local_rank = 0
     comm_size = 1
+    comm_local_size = 1
     if horovod:
         hvd.init()
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
+        comm_local_size = hvd.local_size()
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
         
@@ -336,7 +338,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
+    trn_data, val_data, tst_data = load_data(input_path,comm_local_size,comm_local_rank,trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
@@ -360,9 +362,9 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         #create datasets
         #files = tf.placeholder(tf.string, shape=[None])
         trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
+        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
         val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
-        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
+        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
