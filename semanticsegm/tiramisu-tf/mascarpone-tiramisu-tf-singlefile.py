@@ -387,7 +387,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         loss = None
         if loss_type == "weighted":
-            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot, logits=logit, weights=next_elem[2])
         elif loss_type == "focal":
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
@@ -464,7 +464,6 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
             epoch = 1
             train_loss = 0.
             start_time = time.time()
-            training_start_time = start_time
             while not sess.should_stop():
                 
                 #training loop
@@ -476,15 +475,14 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     
                     if train_steps_in_epoch > 0:
                         #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
+                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch, time.time() - training_start_time))
                     else:
                         end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
                         iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
-                        start_time = time.time()
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, iou_score, time.time() - start_time))
                         
                         #evaluation loop
                         eval_loss = 0.
