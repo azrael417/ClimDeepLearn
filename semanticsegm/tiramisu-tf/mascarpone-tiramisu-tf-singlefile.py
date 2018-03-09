@@ -280,7 +280,8 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        train_op = get_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        #train_op = get_optimizer("Adam", loss, global_step, learning_rate)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
@@ -359,6 +360,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     step += 1
                     
                     #print step report
+                    divisor = train_steps_in_epoch if train_steps_in_epoch > 0 else num_steps_per_epoch
                     print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-start_time))
                     
                     #do the validation phase
