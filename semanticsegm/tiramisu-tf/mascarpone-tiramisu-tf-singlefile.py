@@ -360,8 +360,8 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     step += 1
                     
                     #print step report
-                    divisor = train_steps_in_epoch if train_steps_in_epoch > 0 else num_steps_per_epoch
-                    print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-start_time))
+                    eff_steps = train_steps_in_epoch if train_steps_in_epoch > 0 else num_steps_per_epoch
+                    print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/eff_steps,time.time()-start_time))
                     
                     #do the validation phase
                     if train_steps_in_epoch == 0:
