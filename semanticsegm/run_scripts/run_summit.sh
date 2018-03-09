@@ -32,7 +32,7 @@ cp ../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 cd ${run_dir}
 
 #datadir
-datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
+datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat_new"
 scratchdir="/xfs/scratch/"$(whoami)"/data"
 
 #compute number of stagein files dependent on data volume

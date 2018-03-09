@@ -213,8 +213,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-        trn_data, val_data, tst_data = load_data(input_path, trn_sz)
-    if comm_rank == 0:
+    trn_data, val_data, tst_data = load_data(input_path, trn_sz)
+    if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
 
