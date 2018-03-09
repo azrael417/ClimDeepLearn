@@ -286,9 +286,10 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
-        num_samples = trn_data.shape[0] // comm_size
+        num_samples = trn_data.shape[0] // comm_local_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
+        print("Rank {} does {} steps per epoch",comm_rank, num_steps_per_epoch)
         
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
@@ -360,7 +361,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     step += 1
                     
                     #print step report
-                    eff_steps = train_steps_in_epoch if train_steps_in_epoch > 0 else num_steps_per_epoch
+                    eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
                     print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/eff_steps,time.time()-start_time))
                     
                     #do the validation phase
