@@ -472,10 +472,11 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     
-                    if train_steps_in_epoch > 0:
-                        #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
-                    else:
+                    #print step report
+                    print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
+                    
+                    #do the validation phase
+                    if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
