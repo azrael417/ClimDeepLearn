@@ -32,7 +32,7 @@ except:
     horovod = False
 
 #import helpers
-from tiramisu-helpers import *
+from tiramisu_helpers import *
 
 #GLOBAL CONSTANTS
 image_height =  768 
@@ -280,7 +280,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        train_op = get_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         

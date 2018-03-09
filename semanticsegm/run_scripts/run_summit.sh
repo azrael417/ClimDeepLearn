@@ -26,7 +26,7 @@ run_dir=${SWORK}/tuning/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 cp stage_in.sh ${run_dir}/
 cp ../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
-cp ../tiramisu-tf/tiramisu-helpers.py ${run_dir}/
+cp ../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
