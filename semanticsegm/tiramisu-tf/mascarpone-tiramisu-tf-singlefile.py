@@ -175,7 +175,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate,loss_type):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -187,7 +187,11 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
-        comm_local_size = hvd.local_size()
+        #not all horovod versions have that implemented
+        try:
+            comm_local_size = hvd.local_size()
+        except:
+            comm_local_size = 1
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
     nvtx.RangePop() # init horovod
@@ -209,7 +213,10 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path,comm_local_size,comm_local_rank,trn_sz)
+    if fs_type=="local":
+        trn_data, val_data, tst_data = load_data(input_path, comm_local_size, comm_local_rank, trn_sz)
+    else:
+        trn_data, val_data, tst_data = load_data(input_path, comm_size, comm_rank, trn_sz)
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
@@ -231,12 +238,16 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
 
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
-        #create datasets
-        #files = tf.placeholder(tf.string, shape=[None])
+        #create readers
         trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
         val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
-        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
+        #create datasets
+        if fs_type == "local":
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
+        else:
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
@@ -280,7 +291,8 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        train_op = get_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        #train_op = get_optimizer("Adam", loss, global_step, learning_rate)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
@@ -453,6 +465,7 @@ if __name__ == '__main__':
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
+    AP.add_argument("--fs",type=str,help="Fle system flag: global or local are allowed [local]")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -460,4 +473,4 @@ if __name__ == '__main__':
     weights /= np.sum(weights)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs)
