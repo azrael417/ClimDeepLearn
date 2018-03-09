@@ -3,7 +3,7 @@ import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
-use_scipy=True
+use_scipy = False
 try:
     from scipy.misc import imsave
 except:
@@ -12,6 +12,17 @@ except:
 import h5py as h5
 import os
 import time
+
+use_nvtx = False
+if (use_nvtx):
+  import cupy.cuda.nvtx as nvtx
+else:
+  class nvtx_dummy:
+    def RangePush(self, name, color):
+      pass
+    def RangePop(self):
+      pass
+  nvtx = nvtx_dummy()
 
 #horovod, yes or no?
 horovod=True
@@ -145,8 +156,9 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
         if x.dtype != tf.float32:
             x = tf.cast(x, tf.float32)
-        
+
     return x, tf.nn.softmax(x)
+
 
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
@@ -165,6 +177,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 #main function
 def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate,loss_type):
     #init horovod
+    nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
     comm_local_rank = 0
     comm_size = 1
@@ -177,6 +190,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         comm_local_size = hvd.local_size()
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
+    nvtx.RangePop() # init horovod
         
     #parameters
     batch = 1
@@ -199,7 +213,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     if comm_rank == 0:
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
-    
+
     #print some stats
     if comm_rank==0:
         print("Learning Rate: {}".format(learning_rate))
@@ -216,6 +230,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         print("Num validation samples: {}".format(val_data.shape[0]))
 
     with training_graph.as_default():
+        nvtx.RangePush("TF Init", 3)
         #create datasets
         #files = tf.placeholder(tf.string, shape=[None])
         trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
@@ -263,7 +278,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
 
         #set up global step
         global_step = tf.train.get_or_create_global_step()
-        
+
         #set up optimizer
         train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
         #set up streaming metrics
@@ -322,28 +337,39 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
             sess.run(trn_init_op, feed_dict={handle: trn_handle})
             sess.run(val_init_op, feed_dict={handle: val_handle})
 
+            nvtx.RangePop() # TF Init
+
             #do the training
             epoch = 1
+            step = 1
             train_loss = 0.
+            nvtx.RangePush("Training Loop", 4)
+            nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
             while not sess.should_stop():
                 
                 #training loop
                 try:
+                    nvtx.RangePush("Step", step)
                     #construct feed dict
                     _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
+                    nvtx.RangePop() # Step
+                    step += 1
                     
-                    if train_steps_in_epoch > 0:
-                        #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch, time.time() - start_time))
-                    else:
+                    #print step report
+                    print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-start_time))
+                    
+                    #do the validation phase
+                    if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
                         print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
+                        nvtx.RangePush("IOU", 6)
                         iou_score = sess.run(iou_op)
+                        nvtx.RangePop()
                         print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, iou_score, time.time() - start_time))
                         
                         #evaluation loop
@@ -352,6 +378,7 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                         #update the input reader
                         val_reader.minvals = trn_reader.minvals
                         val_reader.maxvals = trn_reader.maxvals
+                        nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
                                 #construct feed dict
@@ -376,13 +403,21 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
+                        nvtx.RangePop() # Eval Loop
                                 
                         #reset counters
                         epoch += 1
                         train_loss = 0.
+                        step = 0
+
+                        nvtx.RangePop() # Epoch
+                        nvtx.RangePush("Epoch", epoch)
                     
                 except tf.errors.OutOfRangeError:
                     break
+
+            nvtx.RangePop() # Epoch
+            nvtx.RangePop() # Training Loop
 
         #test only on rank 0
         #if hvd.rank() == 0:
@@ -423,6 +458,6 @@ if __name__ == '__main__':
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    
+
     #invoke main function
     main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss)
