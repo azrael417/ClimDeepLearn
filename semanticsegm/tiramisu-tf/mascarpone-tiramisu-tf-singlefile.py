@@ -297,7 +297,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
         #compute epochs and stuff:
-        num_samples = trn_data.shape[0] // comm_size
+        if fs_type == "local":
+            num_samples = trn_data.shape[0] // comm_local_size
+        else:
+            num_samples = trn_data.shape[0] // comm_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
         
