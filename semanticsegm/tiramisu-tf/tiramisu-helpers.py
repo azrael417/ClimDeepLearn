@@ -44,7 +44,7 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
 def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
     #set up optimizers
     if opt_type == "Adam":
-        optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
     elif opt_type == "SGD":
@@ -64,7 +64,7 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
 def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.):
     #set up optimizers
     if opt_type == "Adam":
-        optim = tf.train.RMSPropOptimizer(learning_rate=1.)
+        optim = tf.train.AdamOptimizer(learning_rate=1.)
     elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=1.)
     elif opt_type == "SGD":
