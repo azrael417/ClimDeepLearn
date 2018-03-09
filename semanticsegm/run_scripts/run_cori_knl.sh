@@ -27,4 +27,4 @@ cd ${run_dir}
 datadir=${WORK}/gb2018/tiramisu/segm_h5_v3_reformat
 
 #run the training
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 272 -u python -u mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 4 7 7 10 --loss weighted --lr 1e-5 --datadir ${datadir}
+srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 272 -u python -u mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 4 7 7 10 --loss weighted --lr 1e-5 --datadir ${datadir} --fs global

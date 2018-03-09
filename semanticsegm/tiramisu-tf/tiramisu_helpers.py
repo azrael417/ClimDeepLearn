@@ -142,7 +142,7 @@ class h5_input_reader(object):
 
 
 #load data routine
-def load_data(input_path, comm_size, comm_rank, max_files):
+def load_data(input_path, max_files):
 
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
