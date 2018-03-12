@@ -61,7 +61,7 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
     
 
 #larc optimizer:
-def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.):
+def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.):
     #set up optimizers
     if opt_type == "Adam":
         optim = tf.train.AdamOptimizer(learning_rate=1.)

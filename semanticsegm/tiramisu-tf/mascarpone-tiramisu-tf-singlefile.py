@@ -289,7 +289,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1.)
+        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
         #train_op = get_optimizer("Adam", loss, global_step, learning_rate)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
@@ -468,7 +468,7 @@ if __name__ == '__main__':
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
-    AP.add_argument("--fs",type=str,help="Fle system flag: global or local are allowed [local]")
+    AP.add_argument("--fs",type=str,default="local",help="Fle system flag: global or local are allowed [local]")
     parsed = AP.parse_args()
 
     #play with weighting

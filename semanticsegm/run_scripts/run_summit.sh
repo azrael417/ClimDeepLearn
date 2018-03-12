@@ -42,4 +42,4 @@ stagecount=$(( ${numfiles} / ${nnodes} ))
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 mpirun -np ${nnodes} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in.sh ${datadir} ${scratchdir} ${stagecount}
-mpirun -np ${nprocs} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode ${nprocspn} python ./mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 4 7 7 10 --loss weighted --lr 1e-5 --datadir ${scratchdir} |& tee out.${LSB_JOBID}
+mpirun -np ${nprocs} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode ${nprocspn} python ./mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 4 7 7 10 --loss focal --lr 1e-5 --datadir ${scratchdir} |& tee out.${LSB_JOBID}
