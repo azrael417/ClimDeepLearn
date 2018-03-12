@@ -227,6 +227,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             print("Precision: {}".format("FP32"))
         else:
             print("Precision: {}".format("FP16"))
+        print("Blocks: {}".format(blocks))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
@@ -300,7 +301,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             num_samples = trn_data.shape[0] // comm_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
-        print("Rank {} does {} steps per epoch",comm_rank, num_steps_per_epoch)
+        print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
         
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
