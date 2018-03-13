@@ -103,13 +103,17 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
 #input reader class
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, weights, update_on_read=False):
+    def __init__(self, path, channels, weights, normalization_file=None, update_on_read=False):
         self.path = path
         self.channels = channels
         self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
         self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
         self.update_on_read = update_on_read
         self.weights = weights
+        if normalization_file:
+             with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
+                 self.minvals = f['climate']['stats'][self.channels,0]
+                 self.maxvals = f['climate']['stats'][self.channels,1]
     
     def read(self, datafile):
         

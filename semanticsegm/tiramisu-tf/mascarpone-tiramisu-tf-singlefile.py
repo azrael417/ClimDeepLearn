@@ -237,8 +237,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
-        val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
+        trn_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
+        val_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
         #create datasets
         if fs_type == "local":
             trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
@@ -391,8 +391,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                         eval_loss = 0.
                         eval_steps = 0
                         #update the input reader
-                        val_reader.minvals = trn_reader.minvals
-                        val_reader.maxvals = trn_reader.maxvals
+                        #val_reader.minvals = trn_reader.minvals
+                        #val_reader.maxvals = trn_reader.maxvals
                         nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
