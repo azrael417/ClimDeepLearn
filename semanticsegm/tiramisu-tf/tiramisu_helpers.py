@@ -3,6 +3,9 @@ import numpy as np
 import h5py as h5
 import os
 import time
+from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import linalg_ops
 
 #horovod, yes or no?
 horovod=True
@@ -80,25 +83,29 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
     grads_and_vars = optim.compute_gradients(loss)
     for idx, (g, v) in enumerate(grads_and_vars):
         if g is not None:
-            v_norm = tf.norm(tensor=v, ord=2)
-            g_norm = tf.norm(tensor=g, ord=2)
+            v_norm = linalg_ops.norm(tensor=v, ord=2)
+            g_norm = linalg_ops.norm(tensor=g, ord=2)
 
-            larc_local_lr = tf.cond(
-                pred = tf.logical_and( tf.not_equal(v_norm, tf.constant(0.0)), tf.not_equal(g_norm, tf.constant(0.0)) ),
-                true_fn = lambda: LARC_eta * v_norm / g_norm,
-                false_fn = lambda: LARC_epsilon)
+            larc_local_lr = control_flow_ops.cond(
+                pred = math_ops.logical_and( math_ops.not_equal(v_norm, tf.constant(0.0)),
+                                            math_ops.not_equal(g_norm, tf.constant(0.0)) ),
+                                            true_fn = lambda: LARC_eta * v_norm / g_norm,
+                                            false_fn = lambda: LARC_epsilon)
 
             if LARC_mode=="scale":
-                effective_lr = larc_local_lr*learning_rate
+                effective_lr = math_ops.scalar_mul(larc_local_lr,learning_rate)
             else:
-                effective_lr = tf.minimum(larc_local_lr, learning_rate)
+                effective_lr = math_ops.minimum(larc_local_lr, learning_rate)
 
             #multiply gradients
-            grads_and_vars[idx] = (tf.scalar_mul(effective_lr, g), v)
+            grads_and_vars[idx] = (math_ops.scalar_mul(effective_lr, g), v)
 
     #apply gradients:
-    return optim.apply_gradients(grads_and_vars, global_step=global_step)
+    grad_updates = optim.apply_gradients(grads_and_vars, global_step=global_step)
 
+    # Ensure the train_tensor computes grad_updates.
+    with tf.control_dependencies([loss]):
+        return grad_updates
 
 #input reader class
 class h5_input_reader(object):

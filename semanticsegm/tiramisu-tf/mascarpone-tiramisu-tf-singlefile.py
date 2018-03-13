@@ -175,7 +175,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -231,6 +231,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
+        print("Optimizer type: {}".format(opt_type))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
 
@@ -289,8 +290,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        train_op = get_larc_optimizer("Adam", loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
-        #train_op = get_optimizer("Adam", loss, global_step, learning_rate)
+        if opt_type.startswith("LARC"):
+            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
+        else:
+            train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
         
@@ -468,7 +471,8 @@ if __name__ == '__main__':
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
-    AP.add_argument("--fs",type=str,default="local",help="Fle system flag: global or local are allowed [local]")
+    AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
+    AP.add_argument("--optimizer",type=str,default="LARC-ADAM",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-ADAM]")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -476,4 +480,4 @@ if __name__ == '__main__':
     weights /= np.sum(weights)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer)
