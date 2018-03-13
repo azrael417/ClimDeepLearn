@@ -175,10 +175,14 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
+
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])),
+                          num_parallel_calls = 4)
     if batchsize > 1:
         # make sure all batches are equal in size
         dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
+
+    dataset = dataset.prefetch(16)
     dataset = dataset.repeat(num_epochs)
     
     return dataset
@@ -212,8 +216,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     loss_print_interval = 10
     
     #session config
-    sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
-                               intra_op_parallelism_threads=33, #6
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #1
+                               intra_op_parallelism_threads=1, #6
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
