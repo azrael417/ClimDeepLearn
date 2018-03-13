@@ -180,7 +180,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, num_epochs, dtype):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -202,10 +202,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     nvtx.RangePop() # init horovod
         
     #parameters
-    batch = 1
     channels = [0,1,2,10]
-    num_epochs = 150
-    dtype = tf.float32
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -478,11 +475,17 @@ if __name__ == '__main__':
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
+    AP.add_argument("--batch",type=int,default=1,help="Batch size")
+    AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     parsed = AP.parse_args()
 
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
 
+    # convert name of datatype into TF type object
+    dtype=getattr(tf, parsed.dtype)
+
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, dtype=dtype)
