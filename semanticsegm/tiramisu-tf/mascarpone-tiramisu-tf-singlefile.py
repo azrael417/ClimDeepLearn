@@ -162,9 +162,14 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
-    dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if comm_size > 1:
+        # use an equal number of files per shard, leaving out any leftovers
+        per_shard = len(datafilelist) // comm_size
+        sublist = datafilelist[0:per_shard * comm_size]
+        dataset = tf.data.Dataset.from_tensor_slices(sublist)
         dataset = dataset.shard(comm_size, comm_rank)
+    else:
+        dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
