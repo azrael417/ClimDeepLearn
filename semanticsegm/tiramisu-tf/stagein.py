@@ -99,6 +99,7 @@ def main():
             win.Unlock(0)
 
     comm.Barrier()
+    pbar.update(num_files)
     #finish exposure epoch
     win.Free()
 
