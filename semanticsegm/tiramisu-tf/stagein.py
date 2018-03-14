@@ -92,7 +92,7 @@ def main():
             #unlock window
             win.Unlock(0)
 
-    MPI.Barrier()
+    comm.Barrier()
     #finish exposure epoch
     win.Free()
 
