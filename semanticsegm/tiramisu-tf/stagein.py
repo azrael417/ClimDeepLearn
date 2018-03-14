@@ -1,11 +1,14 @@
 from mpi4py import MPI
 import h5py as h5
 import numpy as np
-from shutil import copyfile
+import shutil as sh
 import os
 import argparse
 import random as rnd
+from progressbar import *
 
+# just a simple progress bar
+widgets = ['Staging: ', Percentage(), ' ', Bar(marker='#',left='[',right=']'), ' ', ETA()]
 
 def main():
     AP = argparse.ArgumentParser()
@@ -21,14 +24,13 @@ def main():
 
     #on rank zero, see how many files are there
     files_new = None
-    if comm_rank == 0:
-        #create output path if not exists
-        if not os.path.isdir(parsed.output_path):
-            os.makedirs(parsed.output_path)
-            
+    if comm_rank == 0:            
         #check the files
         files = sorted([x for x in os.listdir(parsed.input_path) if x.startswith(parsed.prefix)])
         files = files[:parsed.max_files]
+
+        num_files = len(files)
+        print("Preparing {} files for staging.".format(num_files))
 
         #shuffle the list
         rnd.seed(1234)
@@ -56,11 +58,46 @@ def main():
     #split the strings
     files = local_files.strip().split(";")
 
+    #create output path if not exists
+    if not os.path.isdir(parsed.output_path):
+        os.makedirs(parsed.output_path)
+
+    #preparing buffer for stagein progress
+    stagecount = np.zeros(1, dtype=np.int) 
+    if comm_rank == 0:
+        win = MPI.Win.Create(stagecount, comm=comm)
+    else:
+        win = MPI.Win.Create(None, comm=comm)
+
+    if comm_rank == 0:
+        print("Staging started.")
+
+    #init progressbar on rank 0:
+    if comm_rank == 0:
+        pbar = ProgressBar(widgets=widgets, maxval=num_files)
+        pbar.start()
+
     #do the stagein process
-    for filename in files:
+    inc = np.ones([1], dtype=np.int)
+    for idx,filename in enumerate(files):
         infilename = parsed.input_path+'/'+filename
-        outfilename = parsed.output_path+'/'+filename
-        copyfile(infilename, outfilename)
+        sh.copy(infilename, parsed.output_path)
+        win.Lock(0, MPI.LOCK_SHARED)
+        win.Accumulate(inc, 0, op=MPI.SUM)
+        win.Unlock(0)
+        if (comm_rank == 0) and (idx%10==0):
+            #lock window
+            win.Lock(0, MPI.LOCK_EXCLUSIVE)
+            pbar.update(stagecount[0])
+            #unlock window
+            win.Unlock(0)
+
+    comm.Barrier()
+    #finish exposure epoch
+    win.Free()
+
+    if comm_rank == 0:
+        print("Staging done.")
 
 if __name__ == "__main__":
     main()
