@@ -13,6 +13,9 @@ import h5py as h5
 import os
 import time
 
+# limit tensorflow spewage to just warnings and errors
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 use_nvtx = False
 if (use_nvtx):
   import cupy.cuda.nvtx as nvtx
