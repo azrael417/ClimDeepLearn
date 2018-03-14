@@ -356,6 +356,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
+            if chkpt is not None:
+              print("We are restoring from chkpt {}".format(chkpt))
+              saver = tf.train.Saver()
+              saver.restore(sess,chkpt)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -474,7 +478,7 @@ if __name__ == '__main__':
     AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
-    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
+    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
