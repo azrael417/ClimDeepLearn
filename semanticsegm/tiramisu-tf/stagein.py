@@ -16,6 +16,7 @@ def main():
     AP.add_argument("--input_path",type=str,help="Path to read from. Needs to be visible by all the nodes.")
     AP.add_argument("--output_path",type=str,help="Path to write to, needs to be visible from the individual nodes writing the shard.")
     AP.add_argument("--max_files",type=int,default=-1,help="Maximum number of files to copy.")
+    AP.add_argument("--clean", action="store_true", help="Remove files from the output path if it already exists.")
     parsed = AP.parse_args()
 
     comm = MPI.COMM_WORLD
@@ -61,6 +62,11 @@ def main():
     #create output path if not exists
     if not os.path.isdir(parsed.output_path):
         os.makedirs(parsed.output_path)
+    else:
+        if parsed.clean:
+            rmlist = os.listdir(parsed.output_path)
+            for rmfile in rmlist:
+                os.remove(parsed.output_path+'/'+rmfile)
 
     #preparing buffer for stagein progress
     stagecount = np.zeros(1, dtype=np.int) 

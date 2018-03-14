@@ -36,11 +36,7 @@ cd ${run_dir}
 datadir="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
 scratchdir="/xfs/scratch/"$(whoami)"/data"
 
-#compute number of stagein files dependent on data volume
-numfiles=$(ls ${datadir} | wc -l)
-stagecount=$(( ${numfiles} / ${nnodes} ))
-
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
-mpirun -np ${nnodes} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in_2.sh ${datadir} ${scratchdir}
-#mpirun -np ${nprocs} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode ${nprocspn} python ./mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 7 10 --loss weighted --optimizer "LARC-Adam" --lr 1e-5 --datadir ${scratchdir} |& tee out.${LSB_JOBID}
+mpirun -np ${nnodes} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode 1 ./stage_in_2.sh ${datadir} ${scratchdir} -1
+mpirun -np ${nprocs} --bind-to none -x PATH -x LD_LIBRARY_PATH --hostfile host_list -npernode ${nprocspn} python ./mascarpone-tiramisu-tf-singlefile.py --blocks 3 3 4 7 10 --loss weighted --optimizer "LARC-Adam" --lr 1e-5 --datadir ${scratchdir} |& tee out.${LSB_JOBID}
