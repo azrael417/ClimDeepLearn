@@ -30,9 +30,8 @@ def main():
         files = sorted([x for x in os.listdir(parsed.input_path) if x.startswith(parsed.prefix)])
         files = files[:parsed.max_files]
 
-        #shuffle the list
-        rnd.seed(1234)
-        rnd.shuffle(files)
+        #report what was found
+        print("Summarizing {} files on {} ranks.".format(len(files), comm_size))
 
         #compute length and determine the set for every node:
         chunksize = len(files) // comm_size

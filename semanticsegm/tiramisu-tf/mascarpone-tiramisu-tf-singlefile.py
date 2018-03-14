@@ -477,7 +477,7 @@ if __name__ == '__main__':
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
-    AP.add_argument("--optimizer",type=str,default="LARC-ADAM",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-ADAM]")
+    AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     parsed = AP.parse_args()
 
     #play with weighting
