@@ -297,7 +297,13 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         else:
             train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
         #set up streaming metrics
-        iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
+        iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
+                                                    predictions=tf.argmax(prediction, axis=3),
+                                                    num_classes=3,
+                                                    weights=None,
+                                                    metrics_collections=None,
+                                                    updates_collections=None,
+                                                    name="iou_score")
         
         #compute epochs and stuff:
         if fs_type == "local":
