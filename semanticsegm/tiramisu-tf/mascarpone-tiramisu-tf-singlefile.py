@@ -3,7 +3,7 @@ import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
-use_scipy=True
+use_scipy = False
 try:
     from scipy.misc import imsave
 except:
@@ -13,6 +13,17 @@ import h5py as h5
 import os
 import time
 
+use_nvtx = False
+if (use_nvtx):
+  import cupy.cuda.nvtx as nvtx
+else:
+  class nvtx_dummy:
+    def RangePush(self, name, color):
+      pass
+    def RangePop(self):
+      pass
+  nvtx = nvtx_dummy()
+
 #horovod, yes or no?
 horovod=True
 try:
@@ -20,36 +31,12 @@ try:
 except:
     horovod = False
 
+#import helpers
+from tiramisu_helpers import *
+
 #GLOBAL CONSTANTS
 image_height =  768 
 image_width = 1152
-
-
-def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
-    r"""Compute focal loss for predictions.
-        Multi-labels Focal loss formula:
-            FL = -sum_i alpha_i * y_i * (1-p_i)^gamma * log(p_i)
-                 ,which alpha = 0.25, gamma = 2, p = predictions, y = target_tensor.
-    Args:
-     onehot_labels: A float tensor of shape [batch_size, num_anchors,
-        num_classes] representing one-hot encoded classification targets
-     logits: A float tensor of shape [batch_size, num_anchors,
-        num_classes] representing the prediction logits for each class
-     alpha: A scalar tensor for focal loss alpha hyper-parameter
-     gamma: A scalar tensor for focal loss gamma hyper-parameter
-    Returns:
-        loss: A (scalar) tensor representing the value of the loss function
-    """
-    #subtract the mean before softmaxing
-    pred = tf.nn.softmax(logits, axis=3)
-    #taking the log with some care
-    log_pred = tf.log(tf.clip_by_value(pred,1e-8,1.))
-    #compute weighted labels:
-    weighted_onehot_labels = tf.multiply(onehot_labels,(1-pred)**gamma)
-    #compute the product of logs, weights and reweights
-    prod = -1. * tf.multiply(tf.multiply(weighted_onehot_labels, log_pred), alpha)
-    
-    return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
 
 def conv(x, nf, sz, wd, stride=1): 
@@ -169,81 +156,20 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
         if x.dtype != tf.float32:
             x = tf.cast(x, tf.float32)
-        
+
     return x, tf.nn.softmax(x)
 
 
-#Load Data
-def load_data(input_path, comm_size, comm_rank, max_files):
-    
-    #look for labels and data files
-    files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
-    
-    #we will choose to load only the first p files
-    files = files[:max_files]
-        
-    #convert to numpy
-    files = np.asarray(files)
-
-    #PERMUTATION OF DATA
-    np.random.seed(12345)
-    shuffle_indices = np.random.permutation(len(files))
-    np.save("./shuffle_indices.npy", shuffle_indices)
-    files = files[shuffle_indices]
-    
-    #Create train/validation/test split
-    size = len(files)
-    trn_data = files[:int(0.8 * size)]
-    tst_data = files[int(0.8 * size):int(0.9 * size)]
-    val_data = files[int(0.9 * size):]
-    
-    return trn_data, val_data, tst_data
-
-
-class h5_input_reader(object):
-    
-    def __init__(self, path, channels, weights, update_on_read=False):
-        self.path = path
-        self.channels = channels
-        self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
-        self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
-        self.update_on_read = update_on_read
-        self.weights = weights
-    
-    def read(self, datafile):
-        
-        #data
-        #begin_time = time.time()
-        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
-            #get min and max values and update stored values
-            if self.update_on_read:
-                self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
-                self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
-            #get data
-            data = f['climate']['data'][self.channels,:,:].astype(np.float32)
-            #do min/max normalization
-            for c in range(len(self.channels)):
-                data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-            
-            #get label
-            label = f['climate']['labels'][...].astype(np.int32)
-
-            #get weights
-            weights = np.zeros(label.shape, dtype=np.float32)
-            for idx,w in enumerate(self.weights):
-                weights[np.where(label==idx)]=w
-
-        #time
-        #end_time = time.time()
-        #print "Time to read image %.3f s" % (end_time-begin_time)
-
-        return data, label, weights
-
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
-    dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
-    if comm_size>1:
+    if comm_size > 1:
+        # use an equal number of files per shard, leaving out any leftovers
+        per_shard = len(datafilelist) // comm_size
+        sublist = datafilelist[0:per_shard * comm_size]
+        dataset = tf.data.Dataset.from_tensor_slices(sublist)
         dataset = dataset.shard(comm_size, comm_rank)
+    else:
+        dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.map(lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])))
@@ -254,24 +180,29 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate,loss_type):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, num_epochs, dtype):
     #init horovod
+    nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
     comm_local_rank = 0
     comm_size = 1
+    comm_local_size = 1
     if horovod:
         hvd.init()
         comm_rank = hvd.rank() 
         comm_local_rank = hvd.local_rank()
         comm_size = hvd.size()
+        #not all horovod versions have that implemented
+        try:
+            comm_local_size = hvd.local_size()
+        except:
+            comm_local_size = 1
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
+    nvtx.RangePop() # init horovod
         
     #parameters
-    batch = 1
     channels = [0,1,2,10]
-    num_epochs = 150
-    dtype = tf.float32
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -284,11 +215,11 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path,comm_size,comm_rank,trn_sz)
-    if comm_rank == 0:
+    trn_data, val_data, tst_data = load_data(input_path, trn_sz)
+    if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
-    
+
     #print some stats
     if comm_rank==0:
         print("Learning Rate: {}".format(learning_rate))
@@ -298,19 +229,26 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
             print("Precision: {}".format("FP32"))
         else:
             print("Precision: {}".format("FP16"))
+        print("Blocks: {}".format(blocks))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
+        print("Optimizer type: {}".format(opt_type))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
 
     with training_graph.as_default():
+        nvtx.RangePush("TF Init", 3)
+        #create readers
+        trn_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
+        val_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
         #create datasets
-        #files = tf.placeholder(tf.string, shape=[None])
-        trn_reader = h5_input_reader(input_path, channels, weights, update_on_read=True)
-        trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
-        val_reader = h5_input_reader(input_path, channels, weights, update_on_read=False)
-        val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
+        if fs_type == "local":
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
+        else:
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
@@ -338,39 +276,45 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         loss = None
         if loss_type == "weighted":
-            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot,logits=logit,weights=next_elem[2])
+            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot, logits=logit, weights=next_elem[2])
         elif loss_type == "focal":
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #stuff for debugging loss
-        #prediction_am = tf.argmax(prediction, axis=3)
-        #prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
-        #prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
-        #labels_hist = tf.reduce_mean(labels_one_hot, axis=[0,1,2])
-
         #set up global step
         global_step = tf.train.get_or_create_global_step()
-        
+
         #set up optimizer
-        opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        if horovod:
-            opt = hvd.DistributedOptimizer(opt)
-        train_op = opt.minimize(loss, global_step=global_step)
+        if opt_type.startswith("LARC"):
+            if comm_rank==0:
+                print("Enabling LARC")
+            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
+        else:
+            train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
         #set up streaming metrics
-        iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
+        iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
+                                                    predictions=tf.argmax(prediction, axis=3),
+                                                    num_classes=3,
+                                                    weights=None,
+                                                    metrics_collections=None,
+                                                    updates_collections=None,
+                                                    name="iou_score")
         
         #compute epochs and stuff:
-        num_samples = trn_data.shape[0] // comm_size
+        if fs_type == "local":
+            num_samples = trn_data.shape[0] // comm_local_size
+        else:
+            num_samples = trn_data.shape[0] // comm_size
         num_steps_per_epoch = num_samples // batch
         num_steps = num_epochs*num_steps_per_epoch
+        print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
         
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
-        if horovod:
-            hooks.append(hvd.BroadcastGlobalVariablesHook(0))
+        #bcast init for bcasting the model after start
+        init_bcast = hvd.broadcast_global_variables(0)
         #initializers:
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
@@ -408,58 +352,78 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
+            #restore from checkpoint:
+            if comm_rank == 0:
+                load_model(sess, checkpoint_saver, checkpoint_dir)
+            #broadcast loaded model variables
+            sess.run(init_bcast)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
             sess.run(trn_init_op, feed_dict={handle: trn_handle})
             sess.run(val_init_op, feed_dict={handle: val_handle})
 
+            nvtx.RangePop() # TF Init
+
             #do the training
             epoch = 1
+            step = 1
             train_loss = 0.
+            nvtx.RangePush("Training Loop", 4)
+            nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
-            training_start_time = start_time
             while not sess.should_stop():
                 
                 #training loop
                 try:
+                    nvtx.RangePush("Step", step)
                     #construct feed dict
                     _, _, train_steps, tmp_loss = sess.run([train_op, iou_update_op, global_step, loss], feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
+                    nvtx.RangePop() # Step
+                    step += 1
                     
-                    if train_steps_in_epoch > 0:
-                        #print step report
-                        print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/train_steps_in_epoch,time.time()-training_start_time))
-                    else:
+                    #print step report
+                    eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
+                    print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/eff_steps,time.time()-start_time))
+                    
+                    #do the validation phase
+                    if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
                         train_loss /= num_steps_per_epoch
-                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, train_loss, end_time - start_time))
+                        print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
+                        nvtx.RangePush("IOU", 6)
                         iou_score = sess.run(iou_op)
-                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, epoch duration {} s".format(comm_rank, epoch, num_epochs, iou_score, end_time - start_time))
-                        start_time = time.time()
+                        nvtx.RangePop()
+                        print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, iou_score, time.time() - start_time))
                         
                         #evaluation loop
                         eval_loss = 0.
                         eval_steps = 0
                         #update the input reader
-                        val_reader.minvals = trn_reader.minvals
-                        val_reader.maxvals = trn_reader.maxvals
+                        #val_reader.minvals = trn_reader.minvals
+                        #val_reader.maxvals = trn_reader.maxvals
+                        nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                if use_scipy:
-                                    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                else:
-                                    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                
+                                #print some images
+                                if comm_rank == 0:
+                                    if use_scipy:
+                                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                    else:
+                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
@@ -470,13 +434,21 @@ def main(input_path,blocks,weights,image_dir,checkpoint_dir,trn_sz,learning_rate
                                 print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch-1, num_epochs, iou_score))
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
+                        nvtx.RangePop() # Eval Loop
                                 
                         #reset counters
                         epoch += 1
                         train_loss = 0.
+                        step = 0
+
+                        nvtx.RangePop() # Epoch
+                        nvtx.RangePush("Epoch", epoch)
                     
                 except tf.errors.OutOfRangeError:
                     break
+
+            nvtx.RangePop() # Epoch
+            nvtx.RangePop() # Training Loop
 
         #test only on rank 0
         #if hvd.rank() == 0:
@@ -507,16 +479,25 @@ if __name__ == '__main__':
     AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
-    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
+    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
+    AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
+    AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
+    AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
+    AP.add_argument("--batch",type=int,default=1,help="Batch size")
+    AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     parsed = AP.parse_args()
 
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    
+
+    # convert name of datatype into TF type object
+    dtype=getattr(tf, parsed.dtype)
+
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, dtype=dtype, chkpt = parsed.chkpt)
