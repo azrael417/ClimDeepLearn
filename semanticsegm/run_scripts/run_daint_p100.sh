@@ -22,7 +22,6 @@ export MPICH_RDMA_ENABLED_CUDA=1
 
 #directories
 datadir=/scratch/snx3000/tkurth/data/tiramisu/segm_h5_v3_reformat
-#scratchdir=/tmp/tiramisu
 
 #create run dir
 rundir=${WORK}/data/tiramisu/runs/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -34,5 +33,4 @@ cp ../tiramisu-tf/mascarpone-tiramisu-tf-singlefile.py ${rundir}/
 cd ${rundir}
 
 #run the training
-#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 python -u ./stage_in_2.sh ${datadir} ${scratchdir} 
 srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 -u python -u ./mascarpone-tiramisu-tf-singlefile.py --fs global --datadir ${datadir} --blocks 3 3 4 7 10 --loss weighted --lr 1e-5 |& tee out.${SLURM_JOBID}

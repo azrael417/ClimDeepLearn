@@ -282,12 +282,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #stuff for debugging loss
-        #prediction_am = tf.argmax(prediction, axis=3)
-        #prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
-        #prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
-        #labels_hist = tf.reduce_mean(labels_one_hot, axis=[0,1,2])
-
         #set up global step
         global_step = tf.train.get_or_create_global_step()
 
@@ -317,8 +311,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
-        if horovod:
-            hooks.append(hvd.BroadcastGlobalVariablesHook(0))
+        #bcast init for bcasting the model after start
+        init_bcast = hvd.broadcast_global_variables(0)
         #initializers:
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
@@ -356,10 +350,11 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
-            if chkpt is not None:
-              print("We are restoring from chkpt {}".format(chkpt))
-              saver = tf.train.Saver()
-              saver.restore(sess,chkpt)
+            #restore from checkpoint:
+            if comm_rank == 0:
+                checkpoint_saver.restore(sess,checkpoint_dir)
+            #broadcast loaded model variables
+            sess.run(init_bcast)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -413,16 +408,20 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                             try:
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                if use_scipy:
-                                    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                else:
-                                    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                
+                                #print some images
+                                if comm_rank == 0:
+                                    if use_scipy:
+                                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                    else:
+                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
