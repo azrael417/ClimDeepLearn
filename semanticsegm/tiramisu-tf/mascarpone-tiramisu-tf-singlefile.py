@@ -287,6 +287,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
 
         #set up optimizer
         if opt_type.startswith("LARC"):
+            if comm_rank==0:
+                print("Enabling LARC")
             train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
         else:
             train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
