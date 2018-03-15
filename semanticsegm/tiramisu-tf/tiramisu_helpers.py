@@ -177,3 +177,17 @@ def load_data(input_path, max_files):
     val_data = files[int(0.9 * size):]
 
     return trn_data, val_data, tst_data
+
+
+#load model wrapper
+def load_model(sess, saver, checkpoint_dir):
+    print("Looking for model in {}".format(checkpoint_dir))
+    #get list of checkpoints
+    checkpoints = sorted([x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")])
+    latest_ckpt = checkpoint_dir+'/'+checkpoints[-1]
+    print("Restoring model {}".format(latest_ckpt))
+    try:
+        saver.restore(sess, latest_ckpt)
+        print("Model restoration successful.")
+    except:
+        print("Loading model failed, starting fresh.")

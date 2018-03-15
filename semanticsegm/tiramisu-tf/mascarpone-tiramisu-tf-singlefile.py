@@ -352,7 +352,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             sess.run([init_op, init_local_op])
             #restore from checkpoint:
             if comm_rank == 0:
-                checkpoint_saver.restore(sess,checkpoint_dir)
+                load_model(sess, checkpoint_saver, checkpoint_dir)
             #broadcast loaded model variables
             sess.run(init_bcast)
             #create iterator handles
