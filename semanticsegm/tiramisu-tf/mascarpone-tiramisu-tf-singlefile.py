@@ -3,7 +3,7 @@ import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
-use_scipy = False
+use_scipy = True
 try:
     from scipy.misc import imsave
 except:
@@ -184,6 +184,18 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
     
     return dataset
 
+
+#                                       label predict color
+colormap = np.array([[[  0,  0,  0],  #   0      0     black
+                      [255,  0,255],  #   0      1     purple
+                      [  0,255,255]], #   0      2     cyan
+                     [[  0,255,  0],  #   1      0     green
+                      [128,128,128],  #   1      1     grey
+                      [255,255,  0]], #   1      2     yellow
+                     [[255,  0,  0],  #   2      0     red
+                      [  0,  0,255],  #   2      1     blue
+                      [255,255,255]], #   2      2     white
+                     ])
 
 #main function
 def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, num_epochs, dtype, chkpt):
@@ -459,6 +471,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
                                         imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                        imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
                                     else:
                                         np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
