@@ -67,11 +67,11 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
 def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.):
     #set up optimizers
     if opt_type == "Adam":
-        optim = tf.train.AdamOptimizer(learning_rate=1.)
+        optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "RMSProp":
-        optim = tf.train.RMSPropOptimizer(learning_rate=1.)
+        optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
     elif opt_type == "SGD":
-        optim = tf.train.MomentumOptimizer(learning_rate=1., momentum=momentum)
+        optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
         
@@ -83,7 +83,11 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
     grads_and_vars = optim.compute_gradients(loss)
     for idx, (g, v) in enumerate(grads_and_vars):
         if g is not None:
-            v_norm = linalg_ops.norm(tensor=v, ord=2)
+            if horovod:
+                local_sum = tf.reduce_sum(tf.square(v))
+                v_norm = tf.sqrt(hvd.allreduce(local_sum))
+            else:
+                v_norm = linalg_ops.norm(tensor=v, ord=2)
             g_norm = linalg_ops.norm(tensor=g, ord=2)
 
             larc_local_lr = control_flow_ops.cond(
@@ -93,9 +97,9 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
                                             false_fn = lambda: LARC_epsilon)
 
             if LARC_mode=="scale":
-                effective_lr = math_ops.scalar_mul(larc_local_lr,learning_rate)
+                effective_lr = larc_local_lr
             else:
-                effective_lr = math_ops.minimum(larc_local_lr, learning_rate)
+                effective_lr = math_ops.minimum(larc_local_lr, 1.0)
 
             #multiply gradients
             grads_and_vars[idx] = (math_ops.scalar_mul(effective_lr, g), v)
@@ -177,3 +181,17 @@ def load_data(input_path, max_files):
     val_data = files[int(0.9 * size):]
 
     return trn_data, val_data, tst_data
+
+
+#load model wrapper
+def load_model(sess, saver, checkpoint_dir):
+    print("Looking for model in {}".format(checkpoint_dir))
+    #get list of checkpoints
+    checkpoints = sorted([x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")])
+    latest_ckpt = checkpoint_dir+'/'+checkpoints[-1]
+    print("Restoring model {}".format(latest_ckpt))
+    try:
+        saver.restore(sess, latest_ckpt)
+        print("Model restoration successful.")
+    except:
+        print("Loading model failed, starting fresh.")

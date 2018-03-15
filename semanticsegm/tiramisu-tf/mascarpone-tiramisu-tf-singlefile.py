@@ -180,7 +180,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, num_epochs, dtype, chkpt):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -202,10 +202,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     nvtx.RangePop() # init horovod
         
     #parameters
-    batch = 1
     channels = [0,1,2,10]
-    num_epochs = 150
-    dtype = tf.float32
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -285,22 +282,24 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #stuff for debugging loss
-        #prediction_am = tf.argmax(prediction, axis=3)
-        #prediction_onehot =  tf.contrib.layers.one_hot_encoding(prediction_am, 3)
-        #prediction_hist = tf.reduce_mean(prediction_onehot, axis=[0,1,2])
-        #labels_hist = tf.reduce_mean(labels_one_hot, axis=[0,1,2])
-
         #set up global step
         global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
         if opt_type.startswith("LARC"):
+            if comm_rank==0:
+                print("Enabling LARC")
             train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
         else:
             train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
         #set up streaming metrics
-        iou_op, iou_update_op = tf.metrics.mean_iou(prediction,labels_one_hot,3,weights=None,metrics_collections=None,updates_collections=None,name="iou_score")
+        iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
+                                                    predictions=tf.argmax(prediction, axis=3),
+                                                    num_classes=3,
+                                                    weights=None,
+                                                    metrics_collections=None,
+                                                    updates_collections=None,
+                                                    name="iou_score")
         
         #compute epochs and stuff:
         if fs_type == "local":
@@ -314,8 +313,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
-        if horovod:
-            hooks.append(hvd.BroadcastGlobalVariablesHook(0))
+        #bcast init for bcasting the model after start
+        init_bcast = hvd.broadcast_global_variables(0)
         #initializers:
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
@@ -353,6 +352,11 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
             sess.run([init_op, init_local_op])
+            #restore from checkpoint:
+            if comm_rank == 0:
+                load_model(sess, checkpoint_saver, checkpoint_dir)
+            #broadcast loaded model variables
+            sess.run(init_bcast)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -406,16 +410,20 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                             try:
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op, loss, prediction, next_elem[1]], feed_dict={handle: val_handle})
-                                if use_scipy:
-                                    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                else:
-                                    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                
+                                #print some images
+                                if comm_rank == 0:
+                                    if use_scipy:
+                                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                    else:
+                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
@@ -471,18 +479,25 @@ if __name__ == '__main__':
     AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
-    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint directory")
+    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
+    AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
+    AP.add_argument("--batch",type=int,default=1,help="Batch size")
+    AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     parsed = AP.parse_args()
 
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
 
+    # convert name of datatype into TF type object
+    dtype=getattr(tf, parsed.dtype)
+
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt,trn_sz=parsed.trn_sz,learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, dtype=dtype, chkpt = parsed.chkpt)
