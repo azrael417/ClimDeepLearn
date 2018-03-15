@@ -44,24 +44,29 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
 
 
 #neighborhood loss
-def cluster_loss(onehot_labels, predictions, ksize, padding="SAME", data_format="NHWC", name=None):
+def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=None):
     r"""Computes average loss direction vectors around center points and then compute cosine similarity between center prediction and neighbors.
     That term can be added to a classification loss, for example a pointwise x-entropy to penalize salt-and-pepper noise or clusters smaller than kernel size.
     """
-    
-    #compute average over neighborhood
+    if data_format=="NHWC":
+        axis=-1
+    elif data_format=="NCHW":
+        axis=1
+    else:
+        raise ValueError("Error, format {} not supported for cluster_loss.".format(data_format))
+
+    #compute average over neighborhood and normalize
     average_predictions = tf.nn.avg_pool(predictions, 
                                          ksize=[1,kernel_size,kernel_size,1], 
                                          strides=[1,1,1,1], 
                                          padding=padding,
                                          data_format=data_format,
                                          name=name)
-    
-    #compute cosine distance
-    loss = tf.losses.cosine_distance(labels=onehot_labels, 
-                                     predictions=average_predictions, 
-                                     axis=-1,
-                                     weights=1.0)
+    norm_average_predictions = tf.divide(average_predictions, tf.norm(average_predictions, ord=2, axis=axis))
+    norm_predictions = tf.divide(predictions, tf.norm(predictions, ord=2, axis=axis))
+
+    #compute scalar product across dim and reduce
+    loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(norm_average_predictions,norm_predictions), axis=axis))
     
     return loss
 
