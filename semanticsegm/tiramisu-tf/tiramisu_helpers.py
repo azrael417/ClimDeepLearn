@@ -57,13 +57,13 @@ def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=No
 
     #compute average over neighborhood and normalize
     average_predictions = tf.nn.avg_pool(predictions, 
-                                         ksize=[1,kernel_size,kernel_size,1], 
+                                         ksize=[1,ksize,ksize,1], 
                                          strides=[1,1,1,1], 
                                          padding=padding,
                                          data_format=data_format,
                                          name=name)
-    norm_average_predictions = tf.divide(average_predictions, tf.norm(average_predictions, ord=2, axis=axis))
-    norm_predictions = tf.divide(predictions, tf.norm(predictions, ord=2, axis=axis))
+    norm_average_predictions = tf.divide(average_predictions, tf.norm(average_predictions, ord=2, axis=axis, keepdims=True))
+    norm_predictions = tf.divide(predictions, tf.norm(predictions, ord=2, axis=axis, keepdims=True))
 
     #compute scalar product across dim and reduce
     loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(norm_average_predictions,norm_predictions), axis=axis))
