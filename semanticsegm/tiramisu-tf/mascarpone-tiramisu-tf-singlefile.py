@@ -178,7 +178,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
 
     dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])),
                           num_parallel_calls = 4)
-    if batchsize > 1:
+    if batchsize >= 1:
         # make sure all batches are equal in size
         dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
 
