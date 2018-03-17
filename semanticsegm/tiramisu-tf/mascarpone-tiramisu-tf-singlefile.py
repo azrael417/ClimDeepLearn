@@ -233,6 +233,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
+        print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Optimizer type: {}".format(opt_type))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
