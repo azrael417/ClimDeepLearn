@@ -215,8 +215,9 @@ def load_data(input_path, max_files):
 def load_model(sess, saver, checkpoint_dir):
     print("Looking for model in {}".format(checkpoint_dir))
     #get list of checkpoints
-    checkpoints = sorted([x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")])
-    latest_ckpt = checkpoint_dir+'/'+checkpoints[-1]
+    checkpoints = [x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")]
+    checkpoints = sorted([(int(x.split("-")[1]),x) for x in checkpoints], key=lambda tup: tup[0])
+    latest_ckpt = os.path.join(checkpoint_dir,checkpoints[-1][1])
     print("Restoring model {}".format(latest_ckpt))
     try:
         saver.restore(sess, latest_ckpt)
