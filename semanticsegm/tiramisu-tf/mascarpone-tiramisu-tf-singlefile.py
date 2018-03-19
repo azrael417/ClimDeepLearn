@@ -3,11 +3,15 @@ import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
 import numpy as np
 import argparse
-use_scipy = True
+
+# instead of scipy, use PIL directly to save images
 try:
-    from scipy.misc import imsave
-except:
-    use_scipy=False
+    import PIL
+    def imsave(filename, data):
+        PIL.Image.fromarray(data.astype(np.uint8)).save(filename)
+    have_imsave = True
+except ImportError:
+    have_imsave = False
     
 import h5py as h5
 import os
@@ -466,7 +470,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                 
                                 #print some images
                                 if comm_rank == 0:
-                                    if use_scipy:
+                                    if have_imsave:
                                         imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
                                         imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
