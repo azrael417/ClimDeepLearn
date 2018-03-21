@@ -55,40 +55,52 @@ def conv(x, nf, sz, wd, stride=1):
                             )
 
 
-def dense_block(n, x, growth_rate, p, wd, training):
+def dense_block(n, x, growth_rate, p, wd, training, bn=False):
 
     added = []
     for i in range(n):
-        with tf.name_scope("bn_relu_conv%i"%i) as scope:
-            b = tf.layers.batch_normalization(x, axis=1, training=training)
-            b = tf.nn.relu(b)
-            b = conv(b, growth_rate, sz=3, wd=wd)
-            if p: b = tf.layers.dropout(b, rate=p, training=training)
+        if bn:
+            with tf.name_scope("bn_relu_conv%i"%i) as scope:
+                b = tf.layers.batch_normalization(x, axis=1, training=training)
+                b = tf.nn.relu(b)
+                b = conv(b, growth_rate, sz=3, wd=wd)
+                if p: b = tf.layers.dropout(b, rate=p, training=training)
+        else:
+            with tf.name_scope("relu_conv%i"%i) as scope:
+                b = tf.nn.relu(x)
+                b = conv(b, growth_rate, sz=3, wd=wd)
+                if p: b = tf.layers.dropout(b, rate=p, training=training)
 
-            x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
-            added.append(b)
+        x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
+        added.append(b)
 
     return x, added
 
 
-def transition_dn(x, p, wd, training):
-    with tf.name_scope("bn_relu_conv") as scope:
-        b = tf.layers.batch_normalization(x, axis=1, training=training)
-        b = tf.nn.relu(b)
-        b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
-        if p: b = tf.layers.dropout(b, rate=p, training=training)
+def transition_dn(x, p, wd, training, bn=False):
+    if bn:
+        with tf.name_scope("bn_relu_conv") as scope:
+            b = tf.layers.batch_normalization(x, axis=1, training=training)
+            b = tf.nn.relu(b)
+            b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
+            if p: b = tf.layers.dropout(b, rate=p, training=training)
+    else:
+        with tf.name_scope("relu_conv") as scope:
+            b = tf.nn.relu(x)
+            b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
+            if p: b = tf.layers.dropout(b, rate=p, training=training)
     return b
 
 
-def down_path(x, nb_layers, growth_rate, p, wd, training):
+def down_path(x, nb_layers, growth_rate, p, wd, training, bn=False):
 
     skips = []
     for i,n in enumerate(nb_layers):
         with tf.name_scope("DB%i"%i):
-            x, added = dense_block(n, x, growth_rate, p, wd, training=training)
+            x, added = dense_block(n, x, growth_rate, p, wd, training=training, bn=bn)
             skips.append(x)
         with tf.name_scope("TD%i"%i):
-            x = transition_dn(x, p=p, wd=wd, training=training)
+            x = transition_dn(x, p=p, wd=wd, training=training, bn=bn)
 
     return skips, added
 
@@ -132,7 +144,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
 
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
-         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, dtype=tf.float16):
+         growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
@@ -149,7 +161,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             if p: x = tf.layers.dropout(x, rate=p, training=training)
 
         with tf.name_scope("down_path") as scope:
-            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training)
+            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training, bn=batchnorm)
         
         with tf.name_scope("up_path") as scope:
             x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd,training=training)
@@ -202,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, num_epochs, dtype, chkpt):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -253,6 +265,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             print("Precision: {}".format("FP32"))
         else:
             print("Precision: {}".format("FP16"))
+        print("Batch normalization: {}".format(batchnorm))
         print("Blocks: {}".format(blocks))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
@@ -294,7 +307,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm)
         
         #set up loss
         labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
@@ -557,6 +570,7 @@ if __name__ == '__main__':
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
+    AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     parsed = AP.parse_args()
 
@@ -568,4 +582,4 @@ if __name__ == '__main__':
     dtype=getattr(tf, parsed.dtype)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, dtype=dtype, chkpt = parsed.chkpt)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, dtype=dtype, chkpt = parsed.chkpt)
