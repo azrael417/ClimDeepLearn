@@ -43,6 +43,132 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     
     return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
+from tensorflow.python.training import optimizer
+
+class MyOptimizer(optimizer.Optimizer):
+    def __init__(self, learning_rate,
+                 refopt=None,
+                 Adam_epsilon=1e-8, Adam_beta1=0.9, Adam_beta2=0.999,
+                 LARC_mode=None, LARC_eta=0.002, LARC_epsilon=1./16000.):
+        super(MyOptimizer, self).__init__(use_locking=False, name="foo")
+        self.device = '/device:CPU:0'
+        self.name = 'MyOptimizer'
+        self.learning_rate = learning_rate
+        self.refopt = refopt
+        self.epsilon = Adam_epsilon
+        self.beta1 = Adam_beta1
+        self.beta2 = Adam_beta2
+        self.LARC_eta = LARC_eta
+        self.LARC_epsilon = LARC_epsilon
+        self.LARC_mode = LARC_mode
+
+    def _gradient_allreduce(self, grad_in):
+        if grad_in is None:
+            return None
+        
+        with tf.device(self.device):
+            # force the data to be moved to the desired device
+            g = tf.identity(grad_in)
+            #TODO:
+            # ask for total instead of average, because we can divide out the
+            #  #ranks term below (this is probably not quite kosher if
+            #  something is modifying gradients between compute and apply)
+            g = hvd.allreduce(g, average=True)
+        return g
+        
+    def compute_gradients(self, *args, **kwargs):
+        grads_and_vars = super(MyOptimizer,self).compute_gradients(*args, **kwargs)
+        if horovod and (hvd.size() > 1):
+            grads_and_vars = [ (self._gradient_allreduce(g), v) for g,v in grads_and_vars ]
+        return grads_and_vars
+
+    def apply_gradients(self, grads_and_vars, global_step=None, name=None):
+        ops = []
+        with tf.device(self.device):
+            with tf.name_scope(name, "MyOptimizer"):
+                beta1_t = tf.Variable(initial_value=self.beta1,
+                                      trainable=False,
+                                      name="beta1_power",
+                                      dtype=tf.float32)
+                beta2_t = tf.Variable(initial_value=self.beta2,
+                                      trainable=False,
+                                      name="beta2_power",
+                                      dtype=tf.float32)
+
+                comparisons = []
+                
+                for g,v in grads_and_vars:
+                    if g is None:
+                        continue
+
+                    # fuse Adam and LARS together to save a few operations
+                    g2 = tf.square(g)
+                    if self.LARC_mode:
+                        g_norm = tf.sqrt(tf.reduce_sum(g2))
+                        v_norm = tf.norm(v, ord=2)
+
+                        larc_local_lr = tf.cond(pred=tf.logical_and(tf.not_equal(v_norm, 0.0),
+                                                                    tf.not_equal(g_norm, 0.0)),
+                                                true_fn=lambda: self.LARC_eta * v_norm / g_norm,
+                                                false_fn=lambda: self.LARC_epsilon)
+                        if self.LARC_mode == 'clip':
+                            larc_local_lr = tf.minimum(larc_local_lr, 1.0)
+                    else:
+                        larc_local_lr = 1
+
+                    # the gradients should now be scaled by the local_lr, but
+                    #  we'll fold that into the Adam momentum terms
+
+                    # from tf.train.AdamOptimizer
+                    #    lr_t <- learning_rate * sqrt(1 - beta2^t) / (1 - beta1^t)
+                    #    m_t <- beta1 * m_{t-1} + (1 - beta1) * g
+                    #    v_t <- beta2 * v_{t-1} + (1 - beta2) * g * g
+                    #    variable <- variable - lr_t * m_t / (sqrt(v_t) + epsilon)
+                    m_t = self._zeros_slot(v, "m", self.name)
+                    v_t = self._zeros_slot(v, "v", self.name)
+                    m_next = (self.beta1 * m_t +
+                              ((1 - self.beta1) * larc_local_lr) * g)
+                    m_update = m_t.assign(m_next)
+                    v_next = (self.beta2 * v_t +
+                              ((1 - self.beta2) * larc_local_lr * larc_local_lr) * g2)
+                    v_update = v_t.assign(v_next)
+                    lr_t = self.learning_rate * tf.sqrt(1 - beta2_t) / (1 - beta1_t)
+                    delta = lr_t * m_next / (tf.sqrt(v_next) + self.epsilon)
+                    if self.refopt:
+                        # instead of updating, figure out what we would have
+                        #  updated to so we can compare
+                        ops.append(tf.Print(delta, [v, delta], message=v.name, first_n=64))
+                        comparisons.append((v, v - delta))
+                    else:
+                        update = v.assign_sub(delta)
+                        ops.append(update)
+
+                    ops.extend([ m_update, v_update ])
+
+                if self.refopt:
+                    with tf.control_dependencies(ops):
+                        ref_ops = self.refopt.apply_gradients(grads_and_vars)
+                    ops.append(ref_ops)
+                    norms = []
+                    with tf.control_dependencies([ref_ops]):
+                        #p1 = tf.Print(comparisons[0][1], [ comparisons[0][0], comparisons[0][1], comparisons[0][0]-comparisons[0][1] ], message=comparisons[0][0].name, first_n=3)
+                        #ops.append(p1)
+                        for c in comparisons:
+                            diff = c[0] - c[1]
+                            norms.append(tf.norm(diff, ord=2))
+                    allnorms = tf.stack(norms)
+                    maxerr = tf.reduce_max(allnorms)
+                    p = tf.Print(allnorms, [maxerr, allnorms], message="allnorms")
+                    ops.append(p)
+                    
+                # finally update global_step (if present), beta1_t, and beta2_t
+                with tf.control_dependencies(ops):
+                    if global_step is not None:
+                        ops.append(global_step.assign_add(1))
+                    ops.append(beta1_t.assign(beta1_t * self.beta1))
+                    ops.append(beta2_t.assign(beta2_t * self.beta2))
+
+                return tf.group(ops)
 
 #neighborhood loss
 def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=None):
@@ -75,7 +201,10 @@ def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=No
 #optimizer
 def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
     #set up optimizers
-    if opt_type == "Adam":
+    if opt_type == "custom":
+        optim = MyOptimizer(learning_rate=learning_rate)
+        return optim.minimize(loss, global_step=global_step)
+    elif opt_type == "Adam":
         optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
@@ -95,7 +224,11 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
 #larc optimizer:
 def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.):
     #set up optimizers
-    if opt_type == "Adam":
+    if opt_type == "custom":
+        optim = MyOptimizer(learning_rate=learning_rate, LARC_mode=LARC_mode,
+                            LARC_eta=LARC_eta, LARC_epsilon=LARC_epsilon)
+        return optim.minimize(loss, global_step=global_step)
+    elif opt_type == "Adam":
         optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)

@@ -133,28 +133,33 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3
     return x
 
 
-def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
-                                    initializer=None, regularizer=None,
-                                    trainable=True,
-                                    *args, **kwargs):
-    storage_dtype = tf.float32 if trainable else dtype
-    variable = getter(name, shape, dtype=storage_dtype,
-                      initializer=initializer, regularizer=regularizer,
-                      trainable=trainable,
-                      *args, **kwargs)
-    if trainable and dtype != tf.float32:
-        variable = tf.cast(variable, dtype)
-    return variable
+def float32_variable_storage_getter(storage_device):
+    def storage_getter(getter, name, shape=None, dtype=None,
+                       initializer=None, regularizer=None,
+                       trainable=True,
+                       *args, **kwargs):
+        storage_dtype = tf.float32 if trainable else dtype
+        with tf.device(storage_device):
+            variable = getter(name, shape, dtype=storage_dtype,
+                              initializer=initializer, regularizer=regularizer,
+                              trainable=trainable,
+                              *args, **kwargs)
+            if trainable and dtype != tf.float32:
+                variable = tf.cast(variable, dtype)
+        return variable
+
+    return storage_getter
 
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
-                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3):
+                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3, storage_device=None):
     
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
+    storage_getter = float32_variable_storage_getter(storage_device)
+    with tf.variable_scope("tiramisu", custom_getter=storage_getter):
 
         with tf.variable_scope("conv_input") as scope:
             x = conv(img_input, nb_filter, sz=filter_sz, wd=wd)
@@ -234,7 +239,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
     nvtx.RangePop() # init horovod
-        
+
     #parameters
     channels = [0,1,2,10]
     per_rank_output = False
@@ -312,7 +317,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         val_init_op = iterator.make_initializer(val_dataset)
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, filter_sz=filter_sz)
+        storage_device = '/device:CPU:0' if ('custom' in opt_type) else '/device:GPU:0'
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, filter_sz=filter_sz, storage_device=storage_device)
         
         #set up loss
         loss = None
