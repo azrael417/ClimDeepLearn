@@ -376,7 +376,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         if comm_rank == 0:
             checkpoint_save_freq = num_steps_per_epoch * 2
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
-            hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+            #hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
             #create image dir if not exists
             if not os.path.isdir(image_dir):
                 os.makedirs(image_dir)
@@ -477,19 +477,19 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                                                                 feed_dict={handle: val_handle})
                                 
                                 #print some images
-                                if comm_rank == 0:
-                                    if have_imsave:
-                                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                        imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
-                                    else:
-                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                #if comm_rank == 0:
+                                    #if have_imsave:
+                                    #    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                    #    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                    #    imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
+                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
+                                    #else:
+                                    #    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                    #            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                    #    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                    #            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
 
                                 eval_loss += tmp_loss
                                 eval_steps += 1

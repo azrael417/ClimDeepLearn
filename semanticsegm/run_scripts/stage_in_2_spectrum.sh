@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 VENV=pyvenv_TF_spectrum
 source ~/${VENV}/bin/activate
 
@@ -15,7 +16,7 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=1
 #arguments: 
 #$1 - source dir
 #$2 - destination dir
-
+echo "calling stagein.py"
 python ./stagein.py --prefix="data" --input_path=${1} --output_path=${2} --max_files ${3}
 cp ${1}/stats.h5 ${2}/
 

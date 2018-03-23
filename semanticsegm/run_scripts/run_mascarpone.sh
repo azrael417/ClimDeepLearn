@@ -2,6 +2,9 @@
 # Disable multiple threads
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
+# Reduce horovod sleep time
+export HOROVOD_SLEEP_INTERVAL=0
+
 VENV=pyvenv_TF_spectrum
 source ~/${VENV}/bin/activate
 
@@ -15,7 +18,8 @@ export LD_LIBRARY_PATH=~/${VENV}/lib/python2.7/site-packages/horovod/tensorflow:
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py --datadir /xfs/scratch/mfatica/data --blocks 3 3 4 7 10 --loss weighted --lr 1e-5"
+#APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 4 --datadir /xfs/scratch/mfatica/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam" 
+APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 4 --datadir /xfs/scratch/mfatica/data/ClimDeepLearn_data --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --trn_sz 750" 
 
 #$APP
 

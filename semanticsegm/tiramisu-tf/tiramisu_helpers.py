@@ -201,7 +201,6 @@ class h5_input_reader(object):
 
 #load data routine
 def load_data(input_path, max_files):
-
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
 
@@ -228,14 +227,14 @@ def load_data(input_path, max_files):
 
 #load model wrapper
 def load_model(sess, saver, checkpoint_dir):
-    print("Looking for model in {}".format(checkpoint_dir))
-    #get list of checkpoints
-    checkpoints = [x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")]
-    checkpoints = sorted([(int(x.split("-")[1]),x) for x in checkpoints], key=lambda tup: tup[0])
-    latest_ckpt = os.path.join(checkpoint_dir,checkpoints[-1][1])
-    print("Restoring model {}".format(latest_ckpt))
-    try:
-        saver.restore(sess, latest_ckpt)
-        print("Model restoration successful.")
-    except:
-        print("Loading model failed, starting fresh.")
+    #print("Looking for model in {}".format(checkpoint_dir))
+    ##get list of checkpoints
+    #checkpoints = [x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")]
+    #checkpoints = sorted([(int(x.split("-")[1]),x) for x in checkpoints], key=lambda tup: tup[0])
+    #latest_ckpt = os.path.join(checkpoint_dir,checkpoints[-1][1])
+    #print("Restoring model {}".format(latest_ckpt))
+    #try:
+    #    saver.restore(sess, latest_ckpt)
+    #    print("Model restoration successful.")
+    #except:
+    print("Loading model failed, starting fresh.")
