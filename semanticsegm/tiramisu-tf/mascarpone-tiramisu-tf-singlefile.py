@@ -343,6 +343,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                     metrics_collections=None,
                                                     updates_collections=None,
                                                     name="iou_score")
+        iou_reset_op = tf.variables_initializer([ i for i in tf.local_variables() if i.name.startswith('iou_score/') ])
+
         if horovod:
             iou_avg = hvd.allreduce(iou_op)
         else:
@@ -426,11 +428,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                 try:
                     nvtx.RangePush("Step", step)
                     #construct feed dict
-                    _, _, train_steps, tmp_loss = sess.run([train_op,
-                                                            iou_update_op,
-                                                            global_step,
-                                                            (loss if per_rank_output else loss_avg)],
-                                                           feed_dict={handle: trn_handle})
+                    _, train_steps, tmp_loss = sess.run([train_op,
+                                                         global_step,
+                                                         (loss if per_rank_output else loss_avg)],
+                                                        feed_dict={handle: trn_handle})
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     nvtx.RangePop() # Step
@@ -455,17 +456,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                         else:
                             if comm_rank == 0:
                                 print("COMPLETED: training loss for epoch {} (of {}) is {}, time {} s".format(epoch, num_epochs, train_loss, time.time() - start_time))
-                        if per_rank_output:
-                            nvtx.RangePush("IOU", 6)
-                            iou_score = sess.run(iou_op)
-                            nvtx.RangePop()
-                            print("COMPLETED: rank {}, training IoU for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, iou_score, time.time() - start_time))
-                        else:
-                            nvtx.RangePush("IOU", 6)
-                            iou_score = sess.run(iou_avg)
-                            nvtx.RangePop()
-                            if comm_rank == 0:
-                                print("COMPLETED: training IoU for epoch {} (of {}) is {}, time {} s".format(epoch, num_epochs, iou_score, time.time() - start_time))
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -515,6 +505,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                     iou_score = sess.run(iou_avg)
                                     if comm_rank == 0:
                                         print("COMPLETED: evaluation IoU for epoch {} (of {}) is {}".format(epoch, num_epochs, iou_score))
+                                sess.run(iou_reset_op)
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
                         nvtx.RangePop() # Eval Loop
