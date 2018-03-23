@@ -60,15 +60,15 @@ def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
     added = []
     for i in range(n):
         if bn:
-            with tf.name_scope("bn_relu_conv%i"%i) as scope:
-                b = tf.layers.batch_normalization(x, axis=1, training=training)
+            with tf.name_scope("conv_bn_relu%i"%i) as scope:
+                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
+                b = tf.layers.batch_normalization(b, axis=1, training=training)
                 b = tf.nn.relu(b)
-                b = conv(b, growth_rate, sz=filter_sz, wd=wd)
                 if p: b = tf.layers.dropout(b, rate=p, training=training)
         else:
-            with tf.name_scope("relu_conv%i"%i) as scope:
-                b = tf.nn.relu(x)
-                b = conv(b, growth_rate, sz=filter_sz, wd=wd)
+            with tf.name_scope("conv_relu%i"%i) as scope:
+                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
+                b = tf.nn.relu(b)
                 if p: b = tf.layers.dropout(b, rate=p, training=training)
 
         x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
@@ -79,15 +79,15 @@ def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
 
 def transition_dn(x, p, wd, training, bn=False):
     if bn:
-        with tf.name_scope("bn_relu_conv") as scope:
-            b = tf.layers.batch_normalization(x, axis=1, training=training)
+        with tf.name_scope("conv_bn_relu") as scope:
+            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
+            b = tf.layers.batch_normalization(b, axis=1, training=training)
             b = tf.nn.relu(b)
-            b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
             if p: b = tf.layers.dropout(b, rate=p, training=training)
     else:
-        with tf.name_scope("relu_conv") as scope:
-            b = tf.nn.relu(x)
-            b = conv(b, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
+        with tf.name_scope("conv_relu") as scope:
+            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
+            b = tf.nn.relu(b)
             if p: b = tf.layers.dropout(b, rate=p, training=training)
     return b
 
@@ -158,6 +158,9 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
         with tf.variable_scope("conv_input") as scope:
             x = conv(img_input, nb_filter, sz=filter_sz, wd=wd)
+            if batchnorm:
+                x = tf.layers.batch_normalization(x, axis=1, training=training)
+            x = tf.nn.relu(x)
             if p: x = tf.layers.dropout(x, rate=p, training=training)
 
         with tf.name_scope("down_path") as scope:
