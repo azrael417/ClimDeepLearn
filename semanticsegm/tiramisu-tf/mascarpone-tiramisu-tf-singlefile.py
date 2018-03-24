@@ -150,10 +150,6 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
 
-    # Probably better to do this in the reader
-    if dtype != tf.float32:
-        img_input = tf.cast(img_input, dtype)
-
     with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
 
         with tf.variable_scope("conv_input") as scope:
@@ -176,14 +172,11 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
         #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
         x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
 
-        if x.dtype != tf.float32:
-            x = tf.cast(x, tf.float32)
-
     return x, tf.nn.softmax(x)
 
 
 
-def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, shuffle=False):
+def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, dtype, shuffle=False):
     if comm_size > 1:
         # use an equal number of files per shard, leaving out any leftovers
         per_shard = len(datafilelist) // comm_size
@@ -194,7 +187,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [tf.float32, tf.int32, tf.float32])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -282,19 +275,19 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
-        val_reader = h5_input_reader(input_path, channels, weights, normalization_file="stats.h5", update_on_read=False)
+        trn_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
+        val_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
         #create datasets
         if fs_type == "local":
-            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, shuffle=True)
-            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, shuffle=False)
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, dtype, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_local_size, comm_local_rank, dtype, shuffle=False)
         else:
-            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, shuffle=True)
-            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, shuffle=False)
+            trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_size, comm_rank, dtype, shuffle=True)
+            val_dataset = create_dataset(val_reader, val_data, batch, 1, comm_size, comm_rank, dtype, shuffle=False)
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (tf.float32, tf.int32, tf.float32), 
+        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype),
                                                        ((batch, len(channels), image_height, image_width),
                                                         (batch, image_height, image_width),
                                                         (batch, image_height, image_width))
@@ -315,7 +308,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, filter_sz=filter_sz)
         
         #set up loss
-        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
+        labels_one_hot = tf.cast(tf.contrib.layers.one_hot_encoding(next_elem[1], 3), dtype=dtype)
         loss = None
         if loss_type == "weighted":
             loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot, logits=logit, weights=next_elem[2])
@@ -324,7 +317,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
         if horovod:
-            loss_avg = hvd.allreduce(loss)
+            loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
         else:
             loss_avg = tf.identity(loss)
 
@@ -560,7 +553,7 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
-    AP.add_argument("--loss",default="weighted",type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
+    AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
