@@ -6,7 +6,6 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=0
 export HOROVOD_SLEEP_INTERVAL=0
 
 VENV=pyvenv_TF_spectrum
-#VENV=pyvenv_TF-1.5_ompi_exp
 source ~/${VENV}/bin/activate
 
 # Modify LD_LIBRARY_PATH
@@ -19,8 +18,7 @@ export LD_LIBRARY_PATH=~/${VENV}/lib/python2.7/site-packages/horovod/tensorflow:
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 4 --datadir /xfs/scratch/mfatica/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --dtype float16 --batch 2 --trn_sz 1500" 
-#APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 4 --datadir /xfs/scratch/mfatica/data/ClimDeepLearn_data --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --trn_sz 750" 
+APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 4 --datadir /xfs/scratch/mfatica/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --trn_sz 750" 
 
 #$APP
 
