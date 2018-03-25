@@ -369,7 +369,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         if comm_rank == 0:
             checkpoint_save_freq = num_steps_per_epoch * 2
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
-            #hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+            hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
             #create image dir if not exists
             if not os.path.isdir(image_dir):
                 os.makedirs(image_dir)
@@ -456,9 +456,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                         #evaluation loop
                         eval_loss = 0.
                         eval_steps = 0
-                        #update the input reader
-                        #val_reader.minvals = trn_reader.minvals
-                        #val_reader.maxvals = trn_reader.maxvals
                         nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
@@ -470,19 +467,19 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                                                                 feed_dict={handle: val_handle})
                                 
                                 #print some images
-                                #if comm_rank == 0:
-                                    #if have_imsave:
-                                    #    imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    #    imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
-                                    #    imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
-                                    #           +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
-                                    #else:
-                                    #    np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                    #            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                    #    np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                    #            +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                if comm_rank == 0:
+                                    if have_imsave:
+                                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
+                                        imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
+                                    else:
+                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
+                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
 
                                 eval_loss += tmp_loss
                                 eval_steps += 1
@@ -520,29 +517,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             nvtx.RangePop() # Epoch
             nvtx.RangePop() # Training Loop
 
-        #test only on rank 0
-        #if hvd.rank() == 0:
-        #    with tf.Session(config=sess_config) as sess:
-        #        #init eval
-        #        eval_steps = 0
-        #        eval_loss = 0.
-        #        #init iterator and variables
-        #        sess.run([init_op, init_local_op])
-        #        tst_handle = sess.run(tst_handle_string)
-        #        sess.run(tst_init_op, feed_dict={handle: tst_handle, tst_feat_placeholder: tst, tst_lab_placeholder: tst_labels})
-        #        
-        #        #start evaluation
-        #        while True:
-        #            try:
-        #                #construct feed dict
-        #                _, tmp_loss = sess.run([iou_update_op, loss], feed_dict={handle: tst_handle})
-        #                test_loss += tmp_loss
-        #                test_steps += 1
-        #            except tf.errors.OutOfRangeError:
-        #                test_loss /= test_steps
-        #                print("FINAL: test loss for {} epochs is {}".format(epoch-1, test_loss))
-        #                iou_score = sess.run([iou_op])
-        #                print("FINAL: test IoU for {} epochs is {}".format(epoch-1, iou_score))
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
