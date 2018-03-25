@@ -6,6 +6,7 @@ import time
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import linalg_ops
+import multiprocessing
 
 #horovod, yes or no?
 horovod=True
@@ -111,22 +112,78 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
     with tf.control_dependencies([loss]):
         return grad_updates
 
+# defined outside of the h5_input_reader class due to weirdness with pickling
+#  class methods
+def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype):
+    #begin_time = time.time()
+    with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
+        #get min and max values and update stored values
+        if update_on_read:
+            minvals = np.minimum(minvals, f['climate']['stats'][channels,0])
+            maxvals = np.maximum(maxvals, f['climate']['stats'][channels,1])
+
+        #get data
+        if 'channels' in f['climate']:
+            # some channels have been dropped from the file, so map to the
+            #  actual locations in the file array
+            channel_list = list(f['climate']['channels'])
+            channels = [ channel_list.index(c) for c in channels ]
+        data = f['climate']['data'][channels,:,:]
+
+        # cast data if needed
+        if data.dtype != dtype:
+            data = f['climate']['data'][channels,:,:].astype(dtype)
+
+        #do min/max normalization
+        for c in range(len(channels)):
+            data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
+
+        #get label
+        label = f['climate']['labels'][...]
+        if label.dtype != np.int32:
+            label = label.astype(np.int32)
+
+    #get weights - choose per-channel based on the labels
+    weights = weights[label]
+
+    #time
+    #end_time = time.time()
+    #print "Time to read image %.3f s" % (end_time-begin_time)
+    return data, label, weights, minvals, maxvals
+
 #input reader class
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, weights, normalization_file=None, update_on_read=False):
+    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False):
         self.path = path
         self.channels = channels
-        self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
-        self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
         self.update_on_read = update_on_read
-        self.weights = weights
+        self.dtype = dtype.as_numpy_dtype()
+        self.weights = np.asarray(weights, dtype=self.dtype)
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
-                 self.minvals = f['climate']['stats'][self.channels,0]
-                 self.maxvals = f['climate']['stats'][self.channels,1]
+                 self.minvals = f['climate']['stats'][self.channels,0].astype(self.dtype)
+                 self.maxvals = f['climate']['stats'][self.channels,1].astype(self.dtype)
+        else:
+            self.minvals = np.asarray([np.inf]*len(channels), dtype=self.dtype)
+            self.maxvals = np.asarray([-np.inf]*len(channels), dtype=self.dtype)
+
+    pool = multiprocessing.Pool(processes=4)
     
     def read(self, datafile):
+        path = self.path+'/'+datafile
+        #begin_time = time.time()
+        #nvtx.RangePush('h5_input', 8)
+        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype))
+        if self.update_on_read:
+            self.minvals = np.minimum(self.minvals, new_minvals)
+            self.maxvals = np.maximum(self.maxvals, new_maxvals)
+        #nvtx.RangePop()
+        #end_time = time.time()
+        #print "Time to read %s = %.3f s" % (path, end_time-begin_time)
+        return data, label, weights
+
+    def sequential_read(self, datafile):
         
         #data
         #begin_time = time.time()
@@ -158,7 +215,6 @@ class h5_input_reader(object):
 
 #load data routine
 def load_data(input_path, max_files):
-
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
 
@@ -187,8 +243,9 @@ def load_data(input_path, max_files):
 def load_model(sess, saver, checkpoint_dir):
     print("Looking for model in {}".format(checkpoint_dir))
     #get list of checkpoints
-    checkpoints = sorted([x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")])
-    latest_ckpt = checkpoint_dir+'/'+checkpoints[-1]
+    checkpoints = [x.replace(".index","") for x in os.listdir(checkpoint_dir) if x.startswith("model.ckpt") and x.endswith(".index")]
+    checkpoints = sorted([(int(x.split("-")[1]),x) for x in checkpoints], key=lambda tup: tup[0])
+    latest_ckpt = os.path.join(checkpoint_dir,checkpoints[-1][1])
     print("Restoring model {}".format(latest_ckpt))
     try:
         saver.restore(sess, latest_ckpt)
