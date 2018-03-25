@@ -23,7 +23,8 @@ export MPICH_RDMA_ENABLED_CUDA=1
 
 #directories
 datadir=/scratch/snx3000/tkurth/data/tiramisu/segm_h5_v3_reformat
-scratchdir=/run/$(whoami)/tiramisu
+scratchdir=/dev/shm/$(whoami)/tiramisu
+numfiles=100
 
 #create run dir
 rundir=${WORK}/data/tiramisu/runs/testing/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
