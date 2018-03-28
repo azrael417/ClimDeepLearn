@@ -1,9 +1,11 @@
 #!/bin/bash
 #SBATCH -J climseg_horovod
-#SBATCH -t 00:20:00
+#SBATCH -t 01:00:00
 #SBATCH -A g107
 #SBATCH -p normal
-#SBATCH -C gpu 
+#SBATCH -C gpu
+#SBATCH --gres=gpu:1
+
 
 #setting up stuff
 module unload PrgEnv-cray
@@ -24,7 +26,7 @@ export MPICH_RDMA_ENABLED_CUDA=1
 #directories
 datadir=/scratch/snx3000/tkurth/data/tiramisu/segm_h5_v3_reformat
 scratchdir=/dev/shm/$(whoami)/tiramisu
-numfiles=1000
+numfiles=500
 
 #create run dir
 rundir=${WORK}/data/tiramisu/runs/scaling_2018-03-25/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -40,4 +42,4 @@ cd ${rundir}
 
 #run the training
 srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 ./parallel_stagein.sh ${datadir} ${scratchdir} ${numfiles}
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 -u python -u ./mascarpone-tiramisu-tf-singlefile.py --fs local --datadir ${scratchdir} --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --lr 1e-4 --optimizer="LARC-Adam" |& tee out.${SLURM_JOBID}
+srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 -u python -u ./mascarpone-tiramisu-tf-singlefile.py --fs local --datadir ${scratchdir} --blocks 2 2 2 4 5 --growth 32 --cluster_loss_weight 0.01 --filter-sz 5 --lr 1e-4 --optimizer="LARC-Adam" |& tee out.${SLURM_JOBID}
