@@ -155,15 +155,16 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
             #  actual locations in the file array
             channel_list = list(f['climate']['channels'])
             channels = [ channel_list.index(c) for c in channels ]
-        data = f['climate']['data'][channels,:,:]
 
-        # cast data if needed
-        if data.dtype != dtype:
-            data = f['climate']['data'][channels,:,:].astype(dtype)
+        data = f['climate']['data'][channels,:,:].astype(np.float32)
 
         #do min/max normalization
         for c in range(len(channels)):
-            data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
+            data[c,:,:] = (data[c,:,:]-minvals[c].astype(np.float32))/(maxvals[c].astype(np.float32)-minvals[c].astype(np.float32))
+
+        # cast data if needed
+        if data.dtype != dtype:
+            data = data.astype(dtype)
 
         #get label
         label = f['climate']['labels'][...]
