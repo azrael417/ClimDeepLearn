@@ -210,7 +210,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -272,6 +272,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         print("Optimizer type: {}".format(opt_type))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
+        print("Disable checkpoints: {}".format(disable_checkpoints))
+        print("Disable image save: {}".format(disable_imsave))
 
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
@@ -375,7 +377,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         if comm_rank == 0:
             checkpoint_save_freq = num_steps_per_epoch
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
-            hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
+            if (not disable_checkpoints):
+                hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
             #create image dir if not exists
             if not os.path.isdir(image_dir):
                 os.makedirs(image_dir)
@@ -405,7 +408,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             #initialize
             sess.run([init_op, init_local_op])
             #restore from checkpoint:
-            if comm_rank == 0:
+            if comm_rank == 0 and not disable_checkpoints:
                 load_model(sess, checkpoint_saver, checkpoint_dir)
             #broadcast loaded model variables
             sess.run(init_bcast)
@@ -473,7 +476,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                                                                 feed_dict={handle: val_handle})
                                 
                                 #print some images
-                                if comm_rank == 0:
+                                if comm_rank == 0 and not disable_imsave:
                                     if have_imsave:
                                         imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
@@ -544,6 +547,8 @@ if __name__ == '__main__':
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     AP.add_argument("--filter-sz",type=int,default=3,help="Convolution filter size")
     AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
+    AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
+    AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -554,4 +559,4 @@ if __name__ == '__main__':
     dtype=getattr(tf, parsed.dtype)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, cluster_loss_weight=parsed.cluster_loss_weight, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, dtype=dtype, chkpt=parsed.chkpt, filter_sz=parsed.filter_sz, growth=parsed.growth)
+    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, cluster_loss_weight=parsed.cluster_loss_weight, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, dtype=dtype, chkpt=parsed.chkpt, filter_sz=parsed.filter_sz, growth=parsed.growth, disable_checkpoints=parsed.disable_checkpoints, disable_imsave=parsed.disable_imsave)
