@@ -28,7 +28,8 @@ def main():
             
         #check the files
         files = sorted([x for x in os.listdir(parsed.input_path) if x.startswith(parsed.prefix)])
-        files = files[:parsed.max_files]
+        if parsed.max_files > 0:
+            files = files[:parsed.max_files]
 
         #report what was found
         print("Summarizing {} files on {} ranks.".format(len(files), comm_size))
