@@ -79,11 +79,11 @@ def main():
     #global reductions
     # count
     total_count = comm.allreduce(count, op=MPI.SUM)
-    # average = sum/cout
-    sendbuff = meanstats[:,0].copy() / (len(files) * comm_size)
+    # average = sum/count
+    sendbuff = meanstats[:,0].copy() / total_count
     recvbuff = sendbuff.copy()
     comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
-    meanstats[:,0] = recvbuff[:] / total_count
+    meanstats[:,0] = recvbuff[:]
     
     #max
     sendbuff = meanstats[:,1].copy()

@@ -11,7 +11,7 @@ source ${1}/${VENV}/bin/activate
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 1 --datadir ${1}/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --trn_sz 750 --disable_checkpoints --disable_imsave"
+APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 50 --datadir ${1}/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.00 --lr 1e-4 --optimizer=LARC-Adam"
 
 export PAMI_ENABLE_STRIPING=0
 

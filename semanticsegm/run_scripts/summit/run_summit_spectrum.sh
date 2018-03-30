@@ -1,9 +1,8 @@
 #!/bin/bash
-##BSUB -nnodes 4
-#BSUB -csm y
-#BSUB -R "1*{select[LN]span[hosts=1]} + 168*{select[CN &&  (hname !='c35n15') && (hname !='d04n05') && (hname != 'b25n01') && (hname != 'b25n02') && (hname != 'b25n03') && (hname != 'b25n04') && (hname != 'b25n05') && (hname != 'b25n06') && (hname != 'b25n07') && (hname != 'b25n08') && (hname != 'b25n09') && (hname != 'b25n10') && (hname != 'b25n11') && (hname != 'b25n12') && (hname != 'b25n13') && (hname != 'b25n14') && (hname != 'b25n15') && (hname != 'b25n16')]order[!-slots:maxslots]span[ptile=42] }"
+##BSUB -csm y
+##BSUB -R "1*{select[LN]span[hosts=1]} + 168*{select[CN &&  (hname !='c35n15') && (hname !='d04n05') && (hname != 'b25n01') && (hname != 'b25n02') && (hname != 'b25n03') && (hname != 'b25n04') && (hname != 'b25n05') && (hname != 'b25n06') && (hname != 'b25n07') && (hname != 'b25n08') && (hname != 'b25n09') && (hname != 'b25n10') && (hname != 'b25n11') && (hname != 'b25n12') && (hname != 'b25n13') && (hname != 'b25n14') && (hname != 'b25n15') && (hname != 'b25n16')]order[!-slots:maxslots]span[ptile=42] }"
 #BSUB -W 60
-#BSUB -P VEN101SUMMIT
+#BSUB -P CSC275PRABHAT
 #BSUB -alloc_flags "smt4 nvme"
 #BSUB -J climseg_training
 #BSUB -o out_test.%J
@@ -19,8 +18,7 @@ nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch 
 nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
-SWORK=/gpfs/alpinetds/scratch/mfatica/ven101
-run_dir=${SWORK}/testing/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
+run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 
 cp stage_in_parallel.sh ${run_dir}/
@@ -48,5 +46,5 @@ echo "finished stage_in_parallel.sh"
 
 echo "starting run_mascarpone.sh"
 jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} |& tee out.fp32.${LSB_JOBID}
-jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} |& tee out.fp16.${LSB_JOBID}
+#jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} |& tee out.fp16.${LSB_JOBID}
 echo "finished run_mascarpone.sh"
