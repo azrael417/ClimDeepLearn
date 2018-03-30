@@ -102,32 +102,37 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
         optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
-        
-    #horovod wrapper
-    if horovod:
-        optim = hvd.DistributedOptimizer(optim)
+
+    # instead of using the horovod wrapper, we do the allreduce ourselves below
         
     #compute gradients
     grads_and_vars = optim.compute_gradients(loss)
     for idx, (g, v) in enumerate(grads_and_vars):
         if g is not None:
-            if horovod:
-                local_sum = tf.reduce_sum(tf.square(v))
-                v_norm = tf.sqrt(hvd.allreduce(local_sum))
+            if horovod and (hvd.size() > 1):
+                # if we ask for an average, it does a scalar divide, but
+                #  we can bake that into the scaling below
+                g_reduce = hvd.allreduce(g, average=False)
+                g_scale = 1. / hvd.size()
             else:
-                v_norm = linalg_ops.norm(tensor=v, ord=2)
+                g_reduce = g
+                g_scale = 1
+
+            v_norm = linalg_ops.norm(tensor=v, ord=2)
             g_norm = linalg_ops.norm(tensor=g, ord=2)
 
             larc_local_lr = control_flow_ops.cond(
                 pred = math_ops.logical_and( math_ops.not_equal(v_norm, tf.constant(0.0)),
                                             math_ops.not_equal(g_norm, tf.constant(0.0)) ),
-                                            true_fn = lambda: LARC_eta * v_norm / g_norm,
+                                            true_fn = lambda: (LARC_eta * g_scale) * v_norm / g_norm,
                                             false_fn = lambda: LARC_epsilon)
 
             if LARC_mode=="scale":
                 effective_lr = larc_local_lr
             else:
                 effective_lr = math_ops.minimum(larc_local_lr, 1.0)
+
+            effective_lr *= g_scale
 
             #multiply gradients
             grads_and_vars[idx] = (math_ops.scalar_mul(effective_lr, g), v)
