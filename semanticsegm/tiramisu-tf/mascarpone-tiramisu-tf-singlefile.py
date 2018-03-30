@@ -318,7 +318,16 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         labels_one_hot = tf.cast(tf.contrib.layers.one_hot_encoding(next_elem[1], 3), dtype=dtype)
         loss = None
         if loss_type == "weighted":
-            loss = tf.losses.softmax_cross_entropy(onehot_labels=labels_one_hot, logits=logit, weights=next_elem[2])
+            # TF 1.7 appears to use tf.nn.softmax_cross_entropy_with_logits_v2
+            #  itself, but we can do it manually to support earlier TF versions
+            unweighted = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_one_hot,
+                                                                    logits=logit,
+                                                                    dim=3)
+            weighted = tf.multiply(unweighted, next_elem[2])
+            # TODO: do we really need to normalize this?
+            scale_factor = 1. / weighted.shape.num_elements()
+            loss = tf.reduce_sum(weighted) * scale_factor
+            tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
