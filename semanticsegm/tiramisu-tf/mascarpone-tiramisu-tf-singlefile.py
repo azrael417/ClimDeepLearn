@@ -315,15 +315,11 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, filter_sz=filter_sz)
         
         #set up loss
-        labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
         loss = None
         if loss_type == "weighted":
-            # TF 1.7 appears to use tf.nn.softmax_cross_entropy_with_logits_v2
-            #  itself, but we can do it manually to support earlier TF versions
             logit = tf.cast(logit, tf.float32)
-            unweighted = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_one_hot,
-                                                                    logits=logit,
-                                                                    dim=3)
+            unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
+                                                                        logits=logit)
             w_cast = tf.cast(next_elem[2], tf.float32)
             weighted = tf.multiply(unweighted, w_cast)
             # TODO: do we really need to normalize this?
@@ -331,6 +327,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             loss = tf.reduce_sum(weighted) * scale_factor
             tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
+            labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
             labels_one_hot = tf.cast(labels_one_hot, dtype)
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
