@@ -71,9 +71,9 @@ def main():
             meanstats[:,1] = np.maximum(meanstats[:,1], stats[:,1])
             #minimum for min
             meanstats[:,2] = np.minimum(meanstats[:,2], stats[:,2])
-            #TODO: merge stddev properly
-            meanstats[:,3] = 0
-
+            #TODO: check
+            meanstats[:,3] += (np.square(stats[:,3]) + np.square(stats[:,0]))
+            #increase count
             count += 1
             
     #global reductions
@@ -96,6 +96,12 @@ def main():
     recvbuff = sendbuff.copy()
     comm.Allreduce(sendbuff, recvbuff, op=MPI.MIN)
     meanstats[:,2] = recvbuff[:]
+
+    #stdev
+    sendbuff = meanstats[:,3].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
+    meanstats[:,3] = np.sqrt( (recvbuff[:] - np.square(meanstats[:,0])) / total_count )
 
     #TODO: merge stddev properly
             
