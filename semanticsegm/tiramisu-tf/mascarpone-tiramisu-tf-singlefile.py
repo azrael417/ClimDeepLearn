@@ -1,3 +1,7 @@
+# suppress warnings from earlier versions of h5py (imported by tensorflow)
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
@@ -12,7 +16,7 @@ try:
     have_imsave = True
 except ImportError:
     have_imsave = False
-    
+
 import h5py as h5
 import os
 import time
