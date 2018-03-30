@@ -165,7 +165,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
         #do min/max normalization
         for c in range(len(channels)):
-            data[c,:,:] = (data[c,:,:]-minvals[c].astype(np.float32))/(maxvals[c].astype(np.float32)-minvals[c].astype(np.float32))
+            data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
 
         # cast data if needed
         if data.dtype != dtype:
@@ -195,11 +195,11 @@ class h5_input_reader(object):
         self.weights = np.asarray(weights, dtype=self.dtype)
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
-                 self.minvals = f['climate']['stats'][self.channels,0].astype(self.dtype)
-                 self.maxvals = f['climate']['stats'][self.channels,1].astype(self.dtype)
+                 self.minvals = f['climate']['stats'][self.channels,0].astype(np.float32)
+                 self.maxvals = f['climate']['stats'][self.channels,1].astype(np.float32)
         else:
-            self.minvals = np.asarray([np.inf]*len(channels), dtype=self.dtype)
-            self.maxvals = np.asarray([-np.inf]*len(channels), dtype=self.dtype)
+            self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
+            self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
 
     pool = multiprocessing.Pool(processes=4)
     
