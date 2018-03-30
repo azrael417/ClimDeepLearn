@@ -56,6 +56,7 @@ def main():
     files = local_files.strip().split(";")
 
     #compute stats:
+    count = 1
     with h5.File(parsed.input_path+'/'+files[0],'r') as f:
         meanstats = f["climate"]["stats"][...]
         
@@ -63,36 +64,40 @@ def main():
         with h5.File(parsed.input_path+'/'+filename,'r') as f:
             stats = f["climate"]["stats"][...]
             
-            #minimum for min
-            meanstats[:,0] = np.minimum(meanstats[:,0], stats[:,0])
+            # stats order is mean, max, min, stddev
+            #keep sum for average
+            meanstats[:,0] += stats[:,0]
             #maximum for max
             meanstats[:,1] = np.maximum(meanstats[:,1], stats[:,1])
-            #sum for <x>
-            meanstats[:,2] += stats[:,2]
-            #sum for <x^2>
-            meanstats[:,3] += stats[:,3]
+            #minimum for min
+            meanstats[:,2] = np.minimum(meanstats[:,2], stats[:,2])
+            #TODO: merge stddev properly
+            meanstats[:,3] = 0
+
+            count += 1
             
-            #global reductions
-            #min
-            sendbuff = meanstats[:,0].copy()
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.MIN)
-            meanstats[:,0] = recvbuff[:]
-            #max
-            sendbuff = meanstats[:,1].copy()
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.MAX)
-            meanstats[:,1] = recvbuff[:]
-            #<x>
-            sendbuff = meanstats[:,2].copy() / (len(files) * comm_size)
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
-            meanstats[:,2] = recvbuff[:]
-            #<x^2>
-            sendbuff = meanstats[:,3].copy() / (len(files) * comm_size)
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
-            meanstats[:,3] = recvbuff[:]
+    #global reductions
+    # count
+    total_count = comm.allreduce(count, op=MPI.SUM)
+    # average = sum/cout
+    sendbuff = meanstats[:,0].copy() / (len(files) * comm_size)
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
+    meanstats[:,0] = recvbuff[:] / total_count
+    
+    #max
+    sendbuff = meanstats[:,1].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.MAX)
+    meanstats[:,1] = recvbuff[:]
+
+    #min
+    sendbuff = meanstats[:,2].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.MIN)
+    meanstats[:,2] = recvbuff[:]
+
+    #TODO: merge stddev properly
             
     #write the stuff to a file on each rank:
     if comm_rank == 0:

@@ -151,7 +151,8 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
         if update_on_read:
-            minvals = np.minimum(minvals, f['climate']['stats'][channels,0])
+            # stats order is mean, max, min, stddev
+            minvals = np.minimum(minvals, f['climate']['stats'][channels,2])
             maxvals = np.maximum(maxvals, f['climate']['stats'][channels,1])
 
         #get data
@@ -195,7 +196,8 @@ class h5_input_reader(object):
         self.weights = np.asarray(weights, dtype=self.dtype)
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
-                 self.minvals = f['climate']['stats'][self.channels,0].astype(np.float32)
+                 # stats order is mean, max, min, stddev
+                 self.minvals = f['climate']['stats'][self.channels,2].astype(np.float32)
                  self.maxvals = f['climate']['stats'][self.channels,1].astype(np.float32)
         else:
             self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
