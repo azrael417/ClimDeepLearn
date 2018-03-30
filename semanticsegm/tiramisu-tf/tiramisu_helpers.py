@@ -254,7 +254,8 @@ def load_data(input_path, max_files):
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
 
     #we will choose to load only the first p files
-    files = files[:max_files]
+    if max_files > 0:
+        files = files[:max_files]
 
     #convert to numpy
     files = np.asarray(files)
