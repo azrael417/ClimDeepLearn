@@ -112,10 +112,9 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
             if horovod and (hvd.size() > 1):
                 # if we ask for an average, it does a scalar divide, but
                 #  we can bake that into the scaling below
-                g_reduce = hvd.allreduce(g, average=False)
+                g = hvd.allreduce(g, average=False)
                 g_scale = 1. / hvd.size()
             else:
-                g_reduce = g
                 g_scale = 1
 
             v_norm = linalg_ops.norm(tensor=v, ord=2)
