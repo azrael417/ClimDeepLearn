@@ -263,7 +263,6 @@ def load_data(input_path, max_files):
     #PERMUTATION OF DATA
     np.random.seed(12345)
     shuffle_indices = np.random.permutation(len(files))
-    np.save("./shuffle_indices.npy", shuffle_indices)
     files = files[shuffle_indices]
 
     #Create train/validation/test split
