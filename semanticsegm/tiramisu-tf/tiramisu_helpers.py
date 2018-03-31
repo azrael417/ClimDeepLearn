@@ -262,7 +262,13 @@ def load_data(input_path, max_files):
 
     #PERMUTATION OF DATA
     np.random.seed(12345)
-    shuffle_indices = np.random.permutation(len(files))
+    shufflefile = "./shuffle_indices.npy"
+    if not os.path.isfile(shufflefile):
+        shuffle_indices = np.random.permutation(len(files))
+        if hvd.rank() == 0:
+            np.save(shufflefile,shuffle_indices)
+    else:
+        shuffle_indices = np.load(shufflefile)
     files = files[shuffle_indices]
 
     #Create train/validation/test split

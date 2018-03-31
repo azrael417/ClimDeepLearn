@@ -18,7 +18,7 @@ nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch 
 nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
-run_dir=run_nn64_np384_j53333
+run_dir=${SWORK}/tuning_new/run_nn64_np384_j53333
 #run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 
