@@ -93,7 +93,7 @@ def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
     
 
 #larc optimizer:
-def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.):
+def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=0):
     #set up optimizers
     if opt_type == "Adam":
         optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -108,8 +108,16 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
         
     #compute gradients
     grads_and_vars = optim.compute_gradients(loss)
+    lag_ops = []
     for idx, (g, v) in enumerate(grads_and_vars):
         if g is not None:
+            if gradient_lag > 0:
+                g_lag = tf.Variable(initial_value=tf.zeros(g.shape, g.dtype),
+                                    trainable=False,
+                                    name=v.name.replace(":","_") + '_lag')
+                g_next = g
+                g = g_lag
+                                    
             if horovod and (hvd.size() > 1):
                 # if we ask for an average, it does a scalar divide, but
                 #  we can bake that into the scaling below
@@ -135,14 +143,21 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
             effective_lr *= g_scale
 
             #multiply gradients
-            grads_and_vars[idx] = (math_ops.scalar_mul(effective_lr, g), v)
+            g_scaled = math_ops.scalar_mul(effective_lr, g)
+            grads_and_vars[idx] = (g_scaled, v)
 
-    #apply gradients:
-    grad_updates = optim.apply_gradients(grads_and_vars, global_step=global_step)
+            if gradient_lag > 0:
+                # once we've computed g_scaled, it's safe to overwrite g_lag
+                with tf.control_dependencies([g_scaled]):
+                    lag_ops.append(g_lag.assign(g_next))
 
-    # Ensure the train_tensor computes grad_updates.
+    #apply gradients, making sure to complete the forward pass first
     with tf.control_dependencies([loss]):
-        return grad_updates
+        grad_updates = optim.apply_gradients(grads_and_vars, global_step=global_step)
+    if gradient_lag > 0:
+        grad_updates = tf.group([ grad_updates ] + lag_ops)
+
+    return grad_updates
 
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods

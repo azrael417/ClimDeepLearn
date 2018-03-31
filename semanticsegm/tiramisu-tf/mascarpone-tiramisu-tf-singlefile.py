@@ -214,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -349,7 +349,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         if opt_type.startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
+            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=gradient_lag)
         else:
             train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
         #set up streaming metrics
@@ -573,6 +573,7 @@ if __name__ == '__main__':
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
+    AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -604,4 +605,5 @@ if __name__ == '__main__':
          disable_checkpoints=parsed.disable_checkpoints,
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
-         trace_dir=parsed.trace_dir)
+         trace_dir=parsed.trace_dir,
+         gradient_lag=parsed.gradient_lag)
