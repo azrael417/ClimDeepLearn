@@ -7,6 +7,7 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import linalg_ops
 import multiprocessing
+import signal
 
 #horovod, yes or no?
 horovod=True
@@ -202,7 +203,10 @@ class h5_input_reader(object):
             self.minvals = np.asarray([np.inf]*len(channels), dtype=np.float32)
             self.maxvals = np.asarray([-np.inf]*len(channels), dtype=np.float32)
 
+    # suppress SIGINT when we launch pool so ^C's go to main process
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     pool = multiprocessing.Pool(processes=4)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     def read(self, datafile):
         path = self.path+'/'+datafile

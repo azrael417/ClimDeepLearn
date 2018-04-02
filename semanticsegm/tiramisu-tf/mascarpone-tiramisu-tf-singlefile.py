@@ -214,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave):
+def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -414,7 +414,13 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         #        #summary file writer
         #        summary_writer = tf.summary.FileWriter('./logs', sess.graph)
         ##DEBUG
-        
+
+        if tracing is not None:
+            import tracehook
+            tracing_hook = tracehook.TraceHook(steps_to_trace=tracing,
+                                               cache_traces=True,
+                                               trace_dir=trace_dir)
+            hooks.append(tracing_hook)
 
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
@@ -539,6 +545,9 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             nvtx.RangePop() # Epoch
             nvtx.RangePop() # Training Loop
 
+        # write any cached traces to disk
+        if tracing is not None:
+            tracing_hook.write_traces()
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
@@ -562,6 +571,8 @@ if __name__ == '__main__':
     AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
     AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
+    AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
+    AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -572,4 +583,25 @@ if __name__ == '__main__':
     dtype=getattr(tf, parsed.dtype)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, cluster_loss_weight=parsed.cluster_loss_weight, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, dtype=dtype, chkpt=parsed.chkpt, filter_sz=parsed.filter_sz, growth=parsed.growth, disable_checkpoints=parsed.disable_checkpoints, disable_imsave=parsed.disable_imsave)
+    main(input_path=parsed.datadir,
+         blocks=parsed.blocks,
+         weights=weights,
+         image_dir=parsed.output,
+         checkpoint_dir=parsed.chkpt_dir,
+         trn_sz=parsed.trn_sz,
+         learning_rate=parsed.lr,
+         loss_type=parsed.loss,
+         cluster_loss_weight=parsed.cluster_loss_weight,
+         fs_type=parsed.fs,
+         opt_type=parsed.optimizer,
+         num_epochs=parsed.epochs,
+         batch=parsed.batch,
+         batchnorm=parsed.use_batchnorm,
+         dtype=dtype,
+         chkpt=parsed.chkpt,
+         filter_sz=parsed.filter_sz,
+         growth=parsed.growth,
+         disable_checkpoints=parsed.disable_checkpoints,
+         disable_imsave=parsed.disable_imsave,
+         tracing=parsed.tracing,
+         trace_dir=parsed.trace_dir)
