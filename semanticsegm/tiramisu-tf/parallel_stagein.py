@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# suppress warnings from earlier versions of h5py
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import argparse
 import multiprocessing
 import os
