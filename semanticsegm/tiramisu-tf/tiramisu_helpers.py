@@ -168,17 +168,28 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         for c in range(len(channels)):
             data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
 
-        # cast data if needed
-        if data.dtype != dtype:
-            data = data.astype(dtype)
-
         #get label
         label = f['climate']['labels'][...]
-        if label.dtype != np.int32:
-            label = label.astype(np.int32)
 
-    #get weights - choose per-channel based on the labels
-    weights = weights[label]
+    # cast data and labels if needed
+    if data.dtype != dtype:
+        data = data.astype(dtype)
+
+    if label.dtype != np.int32:
+        label = label.astype(np.int32)
+        
+    sample_target = 500
+    if sample_target is not None:
+        counts = np.histogram(label, bins=[0,1,2,3])[0]
+        #print counts
+        prob = float(sample_target) / counts
+        #print prob
+        r = np.random.uniform(size=label.shape)
+        #print r.shape, (prob[label]).shape
+        weights = (r < prob[label]).astype(dtype)
+    else:
+        #get weights - choose per-channel based on the labels
+        weights = weights[label]
 
     #time
     #end_time = time.time()
