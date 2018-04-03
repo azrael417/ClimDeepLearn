@@ -214,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag):
+def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -273,6 +273,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
         print("Cluster loss weight: {}".format(cluster_loss_weight))
+        print("Output sampling target: {}".format(output_sampling))
         print("Optimizer type: {}".format(opt_type))
         print("Gradient lag: {}".format(gradient_lag))
         print("Num training samples: {}".format(trn_data.shape[0]))
@@ -283,7 +284,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
+        trn_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=output_sampling)
         val_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
         #create datasets
         if fs_type == "local":
@@ -327,9 +328,12 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
                                                                         logits=logit)
             w_cast = tf.cast(next_elem[2], tf.float32)
             weighted = tf.multiply(unweighted, w_cast)
-            # TODO: do we really need to normalize this?
-            scale_factor = 1. / weighted.shape.num_elements()
-            loss = tf.reduce_sum(weighted) * scale_factor
+            if output_sampling:
+                loss = tf.reduce_sum(weighted)
+            else:
+                # TODO: do we really need to normalize this?
+                scale_factor = 1. / weighted.shape.num_elements()
+                loss = tf.reduce_sum(weighted) * scale_factor
             tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
@@ -590,6 +594,7 @@ if __name__ == '__main__':
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
+    AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -623,4 +628,5 @@ if __name__ == '__main__':
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
-         gradient_lag=parsed.gradient_lag)
+         gradient_lag=parsed.gradient_lag,
+         output_sampling=parsed.sampling)

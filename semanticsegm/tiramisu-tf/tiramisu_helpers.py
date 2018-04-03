@@ -161,7 +161,7 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
 
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods
-def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype):
+def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, sample_target):
     #begin_time = time.time()
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
@@ -183,17 +183,29 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         for c in range(len(channels)):
             data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
 
-        # cast data if needed
-        if data.dtype != dtype:
-            data = data.astype(dtype)
-
         #get label
         label = f['climate']['labels'][...]
-        if label.dtype != np.int32:
-            label = label.astype(np.int32)
 
-    #get weights - choose per-channel based on the labels
-    weights = weights[label]
+    # cast data and labels if needed
+    if data.dtype != dtype:
+        data = data.astype(dtype)
+
+    if label.dtype != np.int32:
+        label = label.astype(np.int32)
+        
+    if sample_target is not None:
+        # determine the number of pixels in each of the three classes
+        counts = np.histogram(label, bins=[0,1,2,3])[0]
+        # assign a per-class probability that delivers the target number of
+        #  pixels of each class (in expectation) in the mask
+        prob = float(sample_target) / counts
+        # randomly select actual pixels to include in the loss function on
+        #  this step
+        r = np.random.uniform(size=label.shape)
+        weights = (r < prob[label]).astype(dtype)
+    else:
+        #get weights - choose per-channel based on the labels
+        weights = weights[label]
 
     #time
     #end_time = time.time()
@@ -203,12 +215,13 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 #input reader class
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False):
+    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, sample_target=None):
         self.path = path
         self.channels = channels
         self.update_on_read = update_on_read
         self.dtype = dtype.as_numpy_dtype()
         self.weights = np.asarray(weights, dtype=self.dtype)
+        self.sample_target = sample_target
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
                  # stats order is mean, max, min, stddev
@@ -227,7 +240,7 @@ class h5_input_reader(object):
         path = self.path+'/'+datafile
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
-        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype))
+        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.sample_target))
         if self.update_on_read:
             self.minvals = np.minimum(self.minvals, new_minvals)
             self.maxvals = np.maximum(self.maxvals, new_maxvals)
