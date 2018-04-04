@@ -3,9 +3,9 @@
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
 # Reduce horovod sleep time
-export HOROVOD_SLEEP_INTERVAL=0
+export HOROVOD_SLEEP_INTERVAL=2
 
-VENV=pyvenv_summit
+VENV=pyvenv_summit_v2
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK

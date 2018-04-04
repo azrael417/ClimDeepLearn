@@ -1,6 +1,7 @@
 #!/bin/bash
+#BSUB -nnodes 1
 ##BSUB -csm y
-##BSUB -R "1*{select[LN]span[hosts=1]} + 168*{select[CN &&  (hname !='c35n15') && (hname !='d04n05') && (hname != 'b25n01') && (hname != 'b25n02') && (hname != 'b25n03') && (hname != 'b25n04') && (hname != 'b25n05') && (hname != 'b25n06') && (hname != 'b25n07') && (hname != 'b25n08') && (hname != 'b25n09') && (hname != 'b25n10') && (hname != 'b25n11') && (hname != 'b25n12') && (hname != 'b25n13') && (hname != 'b25n14') && (hname != 'b25n15') && (hname != 'b25n16')]order[!-slots:maxslots]span[ptile=42] }"
+##BSUB -R "1*{select[LN]span[hosts=1]} + 42*{select[CN && (hname != 'a15n10') && (hname != 'b25n09') && (hname != 'b28n12') && (hname != 'b36n08') && (hname != 'c01n01') && (hname != 'c01n02') && (hname != 'c01n03') && (hname != 'c01n04') && (hname != 'c01n05') && (hname != 'c01n06') && (hname != 'c01n07') && (hname != 'c01n08') && (hname != 'c01n09') && (hname != 'c01n10') && (hname != 'c01n11') && (hname != 'c01n12') && (hname != 'c01n13') && (hname != 'c01n14') && (hname != 'c01n15') && (hname != 'c01n16') && (hname != 'c01n17') && (hname != 'c01n18') && (hname != 'c04n05') && (hname != 'c13n05') && (hname != 'c27n06') && (hname != 'c28n10') && (hname != 'c35n15') && (hname != 'd02n06') && (hname != 'd15n14') && (hname != 'd21n16') && (hname != 'e04n01') && (hname != 'e06n07') && (hname != 'e11n18') && (hname != 'e13n03') && (hname != 'e26n06') && (hname != 'e29n10') && (hname != 'e33n16') && (hname != 'e34n06') && (hname != 'f05n08')]order[!-slots:maxslots]span[ptile=42] }"
 #BSUB -W 60
 #BSUB -P CSC275PRABHAT
 #BSUB -alloc_flags "smt4 nvme"
@@ -18,8 +19,9 @@ nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch 
 nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
-run_dir=${SWORK}/tuning_new/run_nn64_np384_j53333
-#run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
+#SWORK=/gpfs/alpinetds/scratch/mfatica/ven101
+#run_dir=${SWORK}/tuning_new/run_nn64_np384_j53333
+run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 
 cp stage_in_parallel.sh ${run_dir}/
