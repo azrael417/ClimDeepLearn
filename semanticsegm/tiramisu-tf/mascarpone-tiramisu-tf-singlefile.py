@@ -246,7 +246,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     loss_print_interval = 10
     
     #session config
-    sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #1
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=10, #1
                                intra_op_parallelism_threads=1, #6
                                log_device_placement=False,
                                allow_soft_placement=True)
