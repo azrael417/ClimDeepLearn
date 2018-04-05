@@ -246,7 +246,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
-    
+    sess_config.gpu_options.force_gpu_compatible = True
+
     #get data
     training_graph = tf.Graph()
     if comm_rank == 0:
