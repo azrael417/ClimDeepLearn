@@ -56,7 +56,7 @@ class TraceHook(tf.train.SessionRunHook):
             self.phase_count = 0
             self.prev_step = step
         if (self.steps_to_trace is None) or (step in self.steps_to_trace):
-            print 'on step {}, {}'.format(step, self.phase_count)
+            #print 'on step {}, {}'.format(step, self.phase_count)
             fetched_timeline = timeline.Timeline(run_values.run_metadata.step_stats)
             chrome_trace = fetched_timeline.generate_chrome_trace_format()
             filename = os.path.join(self.trace_dir,
