@@ -425,6 +425,11 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                                trace_dir=trace_dir)
             hooks.append(tracing_hook)
 
+        # instead of averaging losses over an entire epoch, use a moving
+        #  window average
+        recent_losses = []
+        loss_window_size = 10
+
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
@@ -449,7 +454,7 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             #do the training
             epoch = 1
             step = 1
-            train_loss = 0.
+
             nvtx.RangePush("Training Loop", 4)
             nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
@@ -464,7 +469,8 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                            feed_dict={handle: trn_handle})
                     train_steps += 1
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
-                    train_loss += tmp_loss
+                    recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
+                    train_loss = sum(recent_losses) / len(recent_losses)
                     nvtx.RangePop() # Step
                     step += 1
                     
@@ -472,16 +478,15 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                     eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
                     if (train_steps % loss_print_interval) == 0:
                         if per_rank_output:
-                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss/eff_steps,time.time()-start_time))
+                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
                         else:
                             if comm_rank == 0:
-                                print("REPORT: training loss for step {} (of {}) is {}, time {}".format(train_steps, num_steps, train_loss/eff_steps,time.time()-start_time))
+                                print("REPORT: training loss for step {} (of {}) is {}, time {}".format(train_steps, num_steps, train_loss, time.time()-start_time))
 
                     #do the validation phase
                     if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
-                        train_loss /= num_steps_per_epoch
                         if per_rank_output:
                             print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
                         else:
@@ -540,7 +545,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                                 
                         #reset counters
                         epoch += 1
-                        train_loss = 0.
                         step = 0
 
                         nvtx.RangePop() # Epoch
