@@ -3,7 +3,7 @@
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
 # Reduce horovod sleep time
-export HOROVOD_SLEEP_INTERVAL=0
+export HOROVOD_SLEEP_INTERVAL=2
 
 VENV=pyvenv_summit_v2
 source ${1}/${VENV}/bin/activate
@@ -20,7 +20,7 @@ fi
 #this is the sqrt of the frequencies
 freq="0.991 0.0266 0.13"
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 50 --datadir ${1}/data/ ${channelflag} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.005 --frequencies ${freq}  --lr 1e-4 --optimizer=LARC-Adam"
+APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 50 --datadir ${1}/data/ ${channelflag} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0 --frequencies ${freq}  --lr 1e-4 --optimizer=LARC-Adam"
 
 export PAMI_ENABLE_STRIPING=0
 
