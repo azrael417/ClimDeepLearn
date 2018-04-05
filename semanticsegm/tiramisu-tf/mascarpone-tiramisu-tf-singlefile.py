@@ -342,8 +342,9 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         else:
             loss_avg = tf.identity(loss)
 
-        #set up global step
-        global_step = tf.train.get_or_create_global_step()
+        #set up global step - keep on CPU
+        with tf.device('/device:CPU:0'):
+            global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
         if opt_type.startswith("LARC"):
@@ -352,12 +353,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
             train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000.)
         else:
             train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
-
-        # turns out there's a race condition with reading the global step in
-        #  the same session.run() as the train_op, so add a control dependency
-        #  to make sure we always get the updated value
-        with tf.control_dependencies([train_op]):
-            global_step = tf.identity(global_step)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -446,6 +441,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
 
             nvtx.RangePop() # TF Init
 
+            # figure out what step we're on (it won't be 0 if we are
+            #  restoring from a checkpoint) so we can count from there
+            train_steps = sess.run([global_step])[0]
+
             #do the training
             epoch = 1
             step = 1
@@ -459,10 +458,10 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
                 try:
                     nvtx.RangePush("Step", step)
                     #construct feed dict
-                    _, train_steps, tmp_loss = sess.run([train_op,
-                                                         global_step,
-                                                         (loss if per_rank_output else loss_avg)],
-                                                        feed_dict={handle: trn_handle})
+                    _, tmp_loss = sess.run([train_op,
+                                            (loss if per_rank_output else loss_avg)],
+                                           feed_dict={handle: trn_handle})
+                    train_steps += 1
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     train_loss += tmp_loss
                     nvtx.RangePop() # Step
