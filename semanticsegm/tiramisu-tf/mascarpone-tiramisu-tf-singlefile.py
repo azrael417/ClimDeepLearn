@@ -214,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave):
+def main(input_path, blocks, weights, image_dir, channels, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -236,7 +236,6 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
     nvtx.RangePop() # init horovod
         
     #parameters
-    channels = [0,1,2,10]
     per_rank_output = False
     loss_print_interval = 10
     
@@ -311,8 +310,12 @@ def main(input_path, blocks, weights, image_dir, checkpoint_dir, trn_sz, learnin
         val_handle_string = val_iterator.string_handle()
         val_init_op = iterator.make_initializer(val_dataset)
 
+        #compute the input filter number based on number of channels used
+        num_channels = len(channels)
+        nb_filter = 48
+
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, len(channels), loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, filter_sz=filter_sz)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
         
         #set up loss
         loss = None
@@ -552,6 +555,7 @@ if __name__ == '__main__':
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
+    AP.add_argument("--channels",default=[0,1,2,10],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15 [ 0 1 2 10 ]")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
@@ -572,4 +576,9 @@ if __name__ == '__main__':
     dtype=getattr(tf, parsed.dtype)
 
     #invoke main function
-    main(input_path=parsed.datadir,blocks=parsed.blocks,weights=weights,image_dir=parsed.output,checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, loss_type=parsed.loss, cluster_loss_weight=parsed.cluster_loss_weight, fs_type=parsed.fs, opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, dtype=dtype, chkpt=parsed.chkpt, filter_sz=parsed.filter_sz, growth=parsed.growth, disable_checkpoints=parsed.disable_checkpoints, disable_imsave=parsed.disable_imsave)
+    main(input_path=parsed.datadir, blocks=parsed.blocks, weights=weights, image_dir=parsed.output,
+         channels=parsed.channels, checkpoint_dir=parsed.chkpt_dir, trn_sz=parsed.trn_sz, learning_rate=parsed.lr, 
+         loss_type=parsed.loss, cluster_loss_weight=parsed.cluster_loss_weight, fs_type=parsed.fs, 
+         opt_type=parsed.optimizer, num_epochs=parsed.epochs, batch=parsed.batch, batchnorm=parsed.use_batchnorm, 
+         dtype=dtype, chkpt=parsed.chkpt, filter_sz=parsed.filter_sz, growth=parsed.growth, 
+         disable_checkpoints=parsed.disable_checkpoints, disable_imsave=parsed.disable_imsave)

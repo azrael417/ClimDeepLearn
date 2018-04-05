@@ -18,8 +18,8 @@ nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch 
 nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
-run_dir=${SWORK}/tuning_new/run_nn64_np384_j53333
-#run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
+#run_dir=${SWORK}/tuning_new/run_nn64_np384_j55091
+run_dir=${SWORK}/tuning_new/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 
 cp stage_in_parallel.sh ${run_dir}/
@@ -37,15 +37,16 @@ datadir="/gpfs/alpinetds/world-shared/csc275/climdata_reformat"
 scratchdir="/xfs/scratch/"$(whoami)""
 nperproc=250
 numfiles=$(( ${nprocspn} * ${nperproc} )) 
+channels="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"
 
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 
 echo "starting stage_in_parallel.sh"
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles}
+jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles} ${channels}
 echo "finished stage_in_parallel.sh"
 
 echo "starting run_mascarpone.sh"
-jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} |& tee out.fp32.${LSB_JOBID}
+jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} ${channels} |& tee out.fp32.${LSB_JOBID}
 #jsrun -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} |& tee out.fp16.${LSB_JOBID}
 echo "finished run_mascarpone.sh"
