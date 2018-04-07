@@ -214,7 +214,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling):
+def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -272,6 +272,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
+        print("Loss scale factor: {}".format(scale_factor))
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
         print("Optimizer type: {}".format(opt_type))
@@ -332,8 +333,9 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
                 loss = tf.reduce_sum(weighted)
             else:
                 # TODO: do we really need to normalize this?
-                scale_factor = 1. / weighted.shape.num_elements()
-                loss = tf.reduce_sum(weighted) * scale_factor
+                #scale_factor = 1. / weighted.shape.num_elements()
+                # scale_factor is baked into weights
+                loss = tf.reduce_sum(weighted)
             tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
@@ -576,11 +578,11 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--frequencies",default=[0.982,0.00071,0.017],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
     AP.add_argument("--datadir",type=str,help="Path to input data")
-    AP.add_argument("--channels",default=[0,1,2,10],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15 [ 0 1 2 10 ]")
+    AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
@@ -595,11 +597,13 @@ if __name__ == '__main__':
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
+    AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
     parsed = AP.parse_args()
 
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
+    weights *= parsed.scale_factor
 
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
@@ -629,4 +633,5 @@ if __name__ == '__main__':
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
          gradient_lag=parsed.gradient_lag,
-         output_sampling=parsed.sampling)
+         output_sampling=parsed.sampling,
+         scale_factor=parsed.scale_factor)

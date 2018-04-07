@@ -5,19 +5,21 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=0
 # Reduce horovod sleep time
 export HOROVOD_SLEEP_INTERVAL=2
 
-VENV=pyvenv_summit_v2
+VENV=pyvenv_summit_v3
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py --epochs 1 --datadir ${1}/data/ --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --lr 1e-4 --optimizer=LARC-Adam --dtype float16 --batch 2 --trn_sz 1500 --disable_checkpoints --disable_imsave"
+#this is the sqrt of the frequencies
+freq="0.991 0.0266 0.13"
+
+APP="python ./mascarpone-tiramisu-tf-singlefile.py  --datadir ${1}/data/ --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam --batch 2 --dtype float16 --scale_factor ${4} --gradient-lag ${5} --disable_imsave --disable_checkpoints"
 
 export PAMI_ENABLE_STRIPING=0
 
 case ${lrank} in
 [0])
-#sudo nvidia-smi -ac 877,1380 > /dev/null
 export PAMI_IBV_DEVICE_NAME=mlx5_0:1
 #numactl --physcpubind=0,4,8,12,16,20,24 --membind=0 $APP
 numactl --physcpubind=0-27 --membind=0 $APP
