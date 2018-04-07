@@ -334,8 +334,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
             else:
                 # TODO: do we really need to normalize this?
                 #scale_factor = 1. / weighted.shape.num_elements()
-                # scale_factor is baked into weights
-                loss = tf.reduce_sum(weighted)
+                loss = tf.reduce_sum(weighted) * scale_factor
             tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
@@ -603,7 +602,6 @@ if __name__ == '__main__':
     #play with weighting
     weights = [1./x for x in parsed.frequencies]
     weights /= np.sum(weights)
-    weights *= parsed.scale_factor
 
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
