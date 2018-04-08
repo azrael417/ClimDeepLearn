@@ -28,7 +28,8 @@ def main():
             
         #check the files
         files = sorted([x for x in os.listdir(parsed.input_path) if x.startswith(parsed.prefix)])
-        files = files[:parsed.max_files]
+        if parsed.max_files > 0:
+            files = files[:parsed.max_files]
 
         #report what was found
         print("Summarizing {} files on {} ranks.".format(len(files), comm_size))
@@ -56,6 +57,7 @@ def main():
     files = local_files.strip().split(";")
 
     #compute stats:
+    count = 1
     with h5.File(parsed.input_path+'/'+files[0],'r') as f:
         meanstats = f["climate"]["stats"][...]
         
@@ -63,36 +65,46 @@ def main():
         with h5.File(parsed.input_path+'/'+filename,'r') as f:
             stats = f["climate"]["stats"][...]
             
-            #minimum for min
-            meanstats[:,0] = np.minimum(meanstats[:,0], stats[:,0])
+            # stats order is mean, max, min, stddev
+            #keep sum for average
+            meanstats[:,0] += stats[:,0]
             #maximum for max
             meanstats[:,1] = np.maximum(meanstats[:,1], stats[:,1])
-            #sum for <x>
-            meanstats[:,2] += stats[:,2]
-            #sum for <x^2>
-            meanstats[:,3] += stats[:,3]
+            #minimum for min
+            meanstats[:,2] = np.minimum(meanstats[:,2], stats[:,2])
+            #TODO: check
+            meanstats[:,3] += (np.square(stats[:,3]) + np.square(stats[:,0]))
+            #increase count
+            count += 1
             
-            #global reductions
-            #min
-            sendbuff = meanstats[:,0].copy()
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.MIN)
-            meanstats[:,0] = recvbuff[:]
-            #max
-            sendbuff = meanstats[:,1].copy()
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.MAX)
-            meanstats[:,1] = recvbuff[:]
-            #<x>
-            sendbuff = meanstats[:,2].copy() / (len(files) * comm_size)
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
-            meanstats[:,2] = recvbuff[:]
-            #<x^2>
-            sendbuff = meanstats[:,3].copy() / (len(files) * comm_size)
-            recvbuff = sendbuff.copy()
-            comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
-            meanstats[:,3] = recvbuff[:]
+    #global reductions
+    # count
+    total_count = comm.allreduce(count, op=MPI.SUM)
+    # average = sum/count
+    sendbuff = meanstats[:,0].copy() / total_count
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
+    meanstats[:,0] = recvbuff[:]
+    
+    #max
+    sendbuff = meanstats[:,1].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.MAX)
+    meanstats[:,1] = recvbuff[:]
+
+    #min
+    sendbuff = meanstats[:,2].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.MIN)
+    meanstats[:,2] = recvbuff[:]
+
+    #stdev
+    sendbuff = meanstats[:,3].copy()
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
+    meanstats[:,3] = np.sqrt( (recvbuff[:] - np.square(meanstats[:,0])) / total_count )
+
+    #TODO: merge stddev properly
             
     #write the stuff to a file on each rank:
     if comm_rank == 0:
