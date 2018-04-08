@@ -49,7 +49,7 @@ echo "finished stage_in_parallel.sh"
 
 # Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD
 #export OMPI_LD_PRELOAD_PREPEND=/gpfs/alpinetds/world-shared/ven201/seant/climate/pyvenv_summit_v3/lib/directconv.so
-export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/pyvenv_summit_v3/lib/directconv.so"
+export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/pyvenv_summit_v4/lib/directconv.so"
 
 echo "starting run_mascarpone.sh"
 # NOTE: arguments after scratchdir are (epochs, lr, scale_factor, gradient-lag)

@@ -3,7 +3,7 @@ from tensorflow.python.client import timeline
 import os
 import signal
 try:
-    import horovod as hvd
+    import horovod.tensorflow as hvd
     hvd_rank = hvd.rank()
 except:
     hvd_rank = 0

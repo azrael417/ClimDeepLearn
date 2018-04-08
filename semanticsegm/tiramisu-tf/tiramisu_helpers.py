@@ -159,9 +159,43 @@ def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., 
 
     return grad_updates
 
+class SharedExchangeBuffer(object):
+    def __init__(self, count, size):
+        self.count = count
+        self.size = size
+        self.arrays = [ multiprocessing.RawArray('B', size) for x in xrange(count) ]
+        self.avail = set( xrange(count) )
+
+    def get_free_slot(self):
+        return self.avail.pop()
+
+    def return_slot(self, slot):
+        self.avail.add(slot)
+
+    def pack_arrays(self, slot, *args):
+        ofs = 0
+        for a in args:
+            #print 'packing', a.dtype, a.shape
+            view = np.frombuffer(self.arrays[slot], dtype=a.dtype, count=a.size, offset=ofs).reshape(a.shape)
+            ofs += a.nbytes
+            view[...] = a
+        return tuple((a.dtype, a.size, a.shape) for a in args)
+
+    def unpack_arrays(self, slot, *args):
+        ofs = 0
+        results = []
+        for a in args:
+            #print 'unpacking', a
+            view = np.frombuffer(self.arrays[slot], dtype=a[0], count=a[1], offset=ofs).reshape(a[2])
+            ofs += view.nbytes
+            results.append(view[...])
+        return tuple(results)
+
+smem = SharedExchangeBuffer(4, 128 << 20)
+
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods
-def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, sample_target):
+def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, sample_target, shared_slot):
     #begin_time = time.time()
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
@@ -209,7 +243,8 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
     #time
     #end_time = time.time()
-    #print "Time to read image %.3f s" % (end_time-begin_time)
+    #print "%d: Time to read image %.3f s" % (os.getpid(), end_time-begin_time)
+    data, label, weights = smem.pack_arrays(shared_slot, data, label, weights)
     return data, label, weights, minvals, maxvals
 
 #input reader class
@@ -240,10 +275,13 @@ class h5_input_reader(object):
         path = self.path+'/'+datafile
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
-        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.sample_target))
+        shared_slot = smem.get_free_slot()
+        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.sample_target, shared_slot))
         if self.update_on_read:
             self.minvals = np.minimum(self.minvals, new_minvals)
             self.maxvals = np.maximum(self.maxvals, new_maxvals)
+        data, label, weights = smem.unpack_arrays(shared_slot, data, label, weights)
+        smem.return_slot(shared_slot)
         #nvtx.RangePop()
         #end_time = time.time()
         #print "Time to read %s = %.3f s" % (path, end_time-begin_time)
