@@ -6,10 +6,6 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=0
 export HOROVOD_SLEEP_INTERVAL=2
 
 VENV=pyvenv_summit_v3
-
-## LD_PRELOAD fast kernel (not needed for fp32 so commented for now)
-#export LD_PRELOAD=${1}/${VENV}/lib/directconv.so
-
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK

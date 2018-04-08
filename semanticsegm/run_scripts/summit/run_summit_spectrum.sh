@@ -13,6 +13,7 @@
 # load modules
 module load cuda
 
+
 #determine number of nodes and total procs
 nprocspn=6
 nnodes=$(cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch | wc -l)
@@ -46,14 +47,14 @@ echo "starting stage_in_parallel.sh"
 jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles}
 echo "finished stage_in_parallel.sh"
 
+# Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD
+#export OMPI_LD_PRELOAD_PREPEND=/gpfs/alpinetds/world-shared/ven201/seant/climate/pyvenv_summit_v3/lib/directconv.so
+export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/pyvenv_summit_v3/lib/directconv.so"
+
 echo "starting run_mascarpone.sh"
 # NOTE: arguments after scratchdir are (epochs, lr, scale_factor, gradient-lag)
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 1 0.0001 0.1 1 |& tee out.fp32.${LSB_JOBID}
-# Use this second command if LD_PRELOAD desired for FP32, or if we see a benefit from disabling the hooks for perf
-#jsrun --smpiargs="-x PAMI_DISABLE_CUDA_HOOK=1 -disable_gpu_hooks" -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 1 0.0001 0.1 1 |& tee out.fp32.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 1 0.0001 0.1 0 |& tee out.fp32.${LSB_JOBID}
 
-# NOTE: spectrum cuda hooks disabled to allow LD_PRELOAD. Output is buffered a lot in this case so don't
-# be alarmed if you don't seem training output show up for a little while....
-jsrun --smpiargs="-x PAMI_DISABLE_CUDA_HOOK=1 -disable_gpu_hooks" -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 2 0.0001 0.1 1 |& tee out.fp16.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 2 0.0001 0.1 0 |& tee out.fp16.${LSB_JOBID}
 
 echo "finished run_mascarpone.sh"
