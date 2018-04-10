@@ -21,15 +21,16 @@ nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
 SWORK=/gpfs/alpinetds/world-shared/ven201/seant/climate/gb_runs
+script_dir=`pwd`
 run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_1
 mkdir -p ${run_dir}
 
-cp stage_in_parallel.sh ${run_dir}/
-cp run_mascarpone.sh ${run_dir}/
-cp run_mascarpone_fp16.sh ${run_dir}/
-cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
-cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+cp ${script_dir}/stage_in_parallel.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone_fp16.sh ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
@@ -61,12 +62,12 @@ echo "finished run_mascarpone.sh" `date`
 run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_2
 mkdir -p ${run_dir}
 
-cp stage_in_parallel.sh ${run_dir}/
-cp run_mascarpone.sh ${run_dir}/
-cp run_mascarpone_fp16.sh ${run_dir}/
-cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
-cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+cp ${script_dir}/stage_in_parallel.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone_fp16.sh ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
@@ -79,12 +80,12 @@ echo "finished run_mascarpone.sh" `date`
 run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_3
 mkdir -p ${run_dir}
 
-cp stage_in_parallel.sh ${run_dir}/
-cp run_mascarpone.sh ${run_dir}/
-cp run_mascarpone_fp16.sh ${run_dir}/
-cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
-cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+cp ${script_dir}/stage_in_parallel.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone_fp16.sh ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
@@ -97,12 +98,12 @@ echo "finished run_mascarpone.sh" `date`
 run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_4
 mkdir -p ${run_dir}
 
-cp stage_in_parallel.sh ${run_dir}/
-cp run_mascarpone.sh ${run_dir}/
-cp run_mascarpone_fp16.sh ${run_dir}/
-cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
-cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
-cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+cp ${script_dir}/stage_in_parallel.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone.sh ${run_dir}/
+cp ${script_dir}/run_mascarpone_fp16.sh ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
