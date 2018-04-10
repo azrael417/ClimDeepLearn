@@ -22,7 +22,7 @@ nprocs=$(( ${nnodes} * ${nprocspn} ))
 #script in place
 SWORK=/gpfs/alpinetds/world-shared/ven201/seant/climate/gb_runs
 script_dir=`pwd`
-run_dir=${SWORK}/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_1
+run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_1
 mkdir -p ${run_dir}
 
 cp ${script_dir}/stage_in_parallel.sh ${run_dir}/
