@@ -400,7 +400,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         
         #checkpointing
         if comm_rank == 0:
-            checkpoint_save_freq = num_steps_per_epoch
+            checkpoint_save_freq = 5*num_steps_per_epoch
             checkpoint_saver = tf.train.Saver(max_to_keep = 1000)
             if (not disable_checkpoints):
                 hooks.append(tf.train.CheckpointSaverHook(checkpoint_dir=checkpoint_dir, save_steps=checkpoint_save_freq, saver=checkpoint_saver))
