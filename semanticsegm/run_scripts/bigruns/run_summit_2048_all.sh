@@ -21,7 +21,7 @@ nprocs=$(( ${nnodes} * ${nprocspn} ))
 
 #script in place
 SWORK=/gpfs/alpinetds/world-shared/ven201/seant/climate/gb_runs
-run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
+run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_1
 mkdir -p ${run_dir}
 
 cp stage_in_parallel.sh ${run_dir}/
@@ -56,14 +56,56 @@ echo "starting run_mascarpone.sh" `date`
 #fp32-lag0
 jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 0.0001 0.1 0 |& tee out.fp32.lag0.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
+#----
+
+run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_2
+mkdir -p ${run_dir}
+
+cp stage_in_parallel.sh ${run_dir}/
+cp run_mascarpone.sh ${run_dir}/
+cp run_mascarpone_fp16.sh ${run_dir}/
+cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+
+#step in
+cd ${run_dir}
 
 #fp16-lag0
 jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 0.0001 0.1 0 |& tee out.fp16.lag0.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
+#----
+
+run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_3
+mkdir -p ${run_dir}
+
+cp stage_in_parallel.sh ${run_dir}/
+cp run_mascarpone.sh ${run_dir}/
+cp run_mascarpone_fp16.sh ${run_dir}/
+cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+
+#step in
+cd ${run_dir}
 
 #fp32-lag1 
 jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 0.0001 0.1 1 |& tee out.fp32.lag1.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
+#----
+
+run_dir=${SWORK}/GB_solution_final/run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}_4
+mkdir -p ${run_dir}
+
+cp stage_in_parallel.sh ${run_dir}/
+cp run_mascarpone.sh ${run_dir}/
+cp run_mascarpone_fp16.sh ${run_dir}/
+cp ../../tiramisu-tf/parallel_stagein.py ${run_dir}/
+cp ../../tiramisu-tf/mascarpone-tiramisu-tf*.py ${run_dir}/
+cp ../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
+
+#step in
+cd ${run_dir}
 
 #fp16-lag1
 jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 0.0001 0.1 1 |& tee out.fp16.lag1.${LSB_JOBID}
