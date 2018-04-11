@@ -55,7 +55,7 @@ echo "starting run_mascarpone.sh" `date`
 # NOTE: arguments after scratchdir are (epochs, lr, scale_factor, gradient-lag)
 
 #fp32-lag0
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 0.0001 0.1 0 |& tee out.fp32.lag0.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 3.2768 0.1 0 |& tee out.fp32.lag0.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
 #----
 
@@ -73,7 +73,7 @@ cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 cd ${run_dir}
 
 #fp16-lag0
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 0.0001 0.1 0 |& tee out.fp16.lag0.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 3.2768 0.1 0 |& tee out.fp16.lag0.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
 #----
 
@@ -91,7 +91,7 @@ cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 cd ${run_dir}
 
 #fp32-lag1 
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 0.0001 0.1 1 |& tee out.fp32.lag1.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone.sh ${scratchdir} 25 3.2768 0.1 1 |& tee out.fp32.lag1.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
 #----
 
@@ -109,5 +109,5 @@ cp ${script_dir}/../../tiramisu-tf/tiramisu_helpers.py ${run_dir}/
 cd ${run_dir}
 
 #fp16-lag1
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 0.0001 0.1 1 |& tee out.fp16.lag1.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_mascarpone_fp16.sh ${scratchdir} 25 3.2768 0.1 1 |& tee out.fp16.lag1.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`
