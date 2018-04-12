@@ -2,6 +2,11 @@
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+# don't write bytecode for imported modules to disk - different ranks can
+#  collide on the file and/or make the file system angry
+import sys
+sys.dont_write_bytecode = True
+
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 from tensorflow.python.ops import array_ops
