@@ -1,5 +1,5 @@
 #!/bin/bash
-#BSUB -nnodes 64
+##BSUB -nnodes 64
 #BSUB -W 30
 ##BSUB -P CSC275PRABHAT
 #BSUB -P VEN101
@@ -8,6 +8,8 @@
 #BSUB -o out_test.%J
 #BSUB -e out_test.%J
 #BSUB -q batch
+#BSUB -csm y
+#BSUB -R "1*{select[LN]span[hosts=1]} + 2688*{select[CN && (hname != 'e28n10') && (hname != 'b35n11') && (hname != 'b08n02') && (hname != 'e01n04') && (hname != 'b18n09') && (hname != 'a09n18') && (hname != 'g14n17') && (hname != 'f14n05') && (hname != 'g30n16') && (hname != 'd21n17') && (hname != 'a36n05') && (hname != 'a11n12') && (hname != 'a15n10') && (hname != 'b01n06') && (hname != 'b25n09') && (hname != 'b28n12') && (hname != 'b35n01') && (hname != 'b35n04') && (hname != 'b36n08') && (hname != 'c02n13') && (hname != 'c13n05') && (hname != 'c25n18') && (hname != 'c27n06') && (hname != 'c28n10') && (hname != 'c30n01') && (hname != 'c34n10') && (hname != 'c34n11') && (hname != 'c34n12') && (hname != 'c34n13') && (hname != 'c34n14') && (hname != 'c34n15') && (hname != 'c34n16') && (hname != 'c34n17') && (hname != 'c35n15') && (hname != 'd02n06') && (hname != 'd03n12') && (hname != 'd04n01') && (hname != 'd14n13') && (hname != 'd15n14') && (hname != 'd25n03') && (hname != 'd25n14') && (hname != 'e04n01') && (hname != 'e06n07') && (hname != 'e09n06') && (hname != 'e11n18') && (hname != 'e12n03') && (hname != 'e12n14') && (hname != 'e13n03') && (hname != 'e25n13') && (hname != 'e26n06') && (hname != 'e27n13') && (hname != 'e28n06') && (hname != 'e29n07') && (hname != 'e29n10') && (hname != 'e30n04') && (hname != 'e33n16') && (hname != 'f01n01') && (hname != 'f05n08') && (hname != 'f13n16') && (hname != 'f17n12') && (hname != 'f19n01') && (hname != 'f23n02') && (hname != 'f24n09') && (hname != 'f29n17') && (hname != 'f32n06') && (hname != 'f32n15') && (hname != 'g02n11') && (hname != 'g18n09') && (hname != 'g21n17') && (hname != 'g23n08') && (hname != 'g23n10') && (hname != 'h19n07') && (hname != 'h33n01') && (hname != 'h34n04') && (hname != 'f28n03') && (hname != 'g16n04') && (hname != 'f04n12') && (hname != 'e03n01') && (hname != 'e30n13') && (hname != 'h29n06') && (hname != 'c08n16') && (hname != 'c08n15') && (hname != 'a23n03') && (hname != 'h29n06') && (hname != 'f26n03') && (hname != 'g13n05') && (hname != 'b25n17') && (hname != 'b36n17') && (hname != 'd27n01') && (hname != 'd03n01') && (hname != 'f18n14') && (hname != 'f17n01') && (hname != 'f17n09') && (hname != 'f06n09') && (hname != 'f12n12') && (hname != 'd06n02') && (hname != 'd28n04') && (hname != 'c35n09') && (hname != 'd21n16') && (hname != 'f19n14') && (hname != 'd21n16') && (hname != 'b08n02')]order[!-slots:maxslots]span[ptile=42] }"
 
 # load modules
 module load cuda
