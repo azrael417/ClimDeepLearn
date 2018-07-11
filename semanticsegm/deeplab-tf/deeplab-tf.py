@@ -9,10 +9,11 @@ sys.dont_write_bytecode = True
 
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
-from tensorflow.python.ops import array_ops, arg_scope
+from tensorflow.contrib.framework import arg_scope
+from tensorflow.python.ops import array_ops
 from tensorflow.contrib.slim.nets import resnet_v2
-#from tensorflow.contrib import layers as layers_lib
-#from tensorflow.contrib.layers.python.layers import layers
+from tensorflow.contrib.layers.python.layers import layers
+from tensorflow.contrib import layers as layers_lib
 import numpy as np
 import argparse
 
@@ -352,8 +353,12 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
                                          base_architecture='resnet_v2_101', 
                                           pre_trained_model=None, 
-                                          batch_norm_decay=None, data_format='channels_last')
+                                          batch_norm_decay=None, data_format='channels_first')
+
         logit, prediction = model(next_elem[0], True)
+
+        print("SHAPES: ", logit.get_shape(), next_elem[0].get_shape())
+
         #logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
         
         #set up loss

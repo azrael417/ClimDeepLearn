@@ -50,7 +50,7 @@ echo "finished stage_in_parallel.sh" `date`
 # Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD
 export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/pyvenv_summit_7.5.18/lib/directconv.so"
 
-echo "starting run_mascarpone.sh" `date`
+echo "starting run_deeplab.sh" `date`
 # NOTE: arguments after scratchdir are (epochs, lr, scale_factor, gradient-lag)
 
 #fp32-lag0
