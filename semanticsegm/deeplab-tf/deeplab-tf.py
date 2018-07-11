@@ -168,7 +168,7 @@ def deeplab_v3_plus_generator(num_classes,
             # Convert the inputs from channels_last (NHWC) to channels_first (NCHW).
             # This provides a large performance boost on GPU. See
             # https://www.tensorflow.org/performance/performance_guide#data_formats
-            inputs = tf.transpose(inputs, [0, 3, 1, 2])
+            inputs = tf.transpose(inputs, [0, 2, 3, 1])
 
         # tf.logging.info('net shape: {}'.format(inputs.shape))
         # encoder
@@ -356,8 +356,6 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
                                           batch_norm_decay=None, data_format='channels_first')
 
         logit, prediction = model(next_elem[0], True)
-
-        print("SHAPES: ", logit.get_shape(), next_elem[0].get_shape())
 
         #logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
         
