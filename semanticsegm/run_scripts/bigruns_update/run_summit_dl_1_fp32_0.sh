@@ -54,5 +54,5 @@ echo "starting run_deeplab.sh" `date`
 # NOTE: arguments after scratchdir are (epochs, lr, scale_factor, gradient-lag)
 
 #fp32-lag0
-jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab.sh ${scratchdir} 10 0.0001 0.1 0 |& tee out.fp32.lag0.${LSB_JOBID}
+jsrun  -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab.sh ${scratchdir} 10 0.0001 0.1 0 1 |& tee out.fp32.lag0.${LSB_JOBID}
 echo "finished run_mascarpone.sh" `date`

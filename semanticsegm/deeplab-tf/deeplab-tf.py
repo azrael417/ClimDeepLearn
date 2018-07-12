@@ -246,7 +246,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
+def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -298,9 +298,6 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         else:
             print("Precision: {}".format("FP16"))
         print("Batch normalization: {}".format(batchnorm))
-        print("Blocks: {}".format(blocks))
-        print("Growth rate: {}".format(growth))
-        print("Filter size: {}".format(filter_sz))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
@@ -610,7 +607,6 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
     AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
-    AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
@@ -626,8 +622,6 @@ if __name__ == '__main__':
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
-    AP.add_argument("--filter-sz",type=int,default=3,help="Convolution filter size")
-    AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
     AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
@@ -647,7 +641,6 @@ if __name__ == '__main__':
     #invoke main function
     main(input_path=parsed.datadir,
          channels=parsed.channels,
-         blocks=parsed.blocks,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
@@ -662,8 +655,6 @@ if __name__ == '__main__':
          batchnorm=parsed.use_batchnorm,
          dtype=dtype,
          chkpt=parsed.chkpt,
-         filter_sz=parsed.filter_sz,
-         growth=parsed.growth,
          disable_checkpoints=parsed.disable_checkpoints,
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
