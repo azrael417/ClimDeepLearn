@@ -62,6 +62,11 @@ image_width = 1152
 _BATCH_NORM_DECAY = 0.9997
 _WEIGHT_DECAY = 5e-4
 
+def ensure_type(input, dtype):
+    if input.dtype != dtype:
+        return tf.cast(input, dtype)
+    else:
+        return input
 
 def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_training, depth=256):
     """Atrous Spatial Pyramid Pooling.
@@ -101,7 +106,9 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_t
                     # 1x1 convolution with 256 filters( and batch normalization)
                     image_level_features = layers_lib.conv2d(image_level_features, depth, [1, 1], stride=1, scope='conv_1x1')
                     # bilinearly upsample features
+                    image_level_features = ensure_type(image_level_features, tf.float32)
                     image_level_features = tf.image.resize_bilinear(image_level_features, inputs_size, name='upsample')
+                    image_level_features = ensure_type(image_level_features, inputs.dtype)
 
                 net = tf.concat([conv_1x1, conv_3x3_1, conv_3x3_2, conv_3x3_3, image_level_features], axis=3, name='concat')
                 net = layers_lib.conv2d(net, depth, [1, 1], stride=1, scope='conv_1x1_concat')
@@ -162,7 +169,15 @@ def deeplab_v3_plus_generator(num_classes,
     else:
         base_model = resnet_v2.resnet_v2_101
 
-    def model(inputs, is_training):
+    base_architecture = 'getter_scope/' + base_architecture
+
+    def model(inputs, is_training, dtype=tf.float32):
+        with tf.variable_scope('getter_scope', custom_getter=float32_variable_storage_getter):
+            if dtype != tf.float32:
+                inputs = tf.cast(inputs, dtype)
+            return model_fp32(inputs, is_training)
+
+    def model_fp32(inputs, is_training):
         """Constructs the ResNet model given the inputs."""
         if data_format == 'channels_first':
             # Convert the inputs from channels_last (NHWC) to channels_first (NCHW).
@@ -199,12 +214,16 @@ def deeplab_v3_plus_generator(num_classes,
                         low_level_features_size = tf.shape(low_level_features)[1:3]
 
                     with tf.variable_scope("upsampling_logits"):
+                        encoder_output = ensure_type(encoder_output, tf.float32)
                         net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
+                        net = ensure_type(net, low_level_features.dtype)
                         net = tf.concat([net, low_level_features], axis=3, name='concat')
                         net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
                         net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
                         net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                        net = ensure_type(net, tf.float32)
                         logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
+                        logits = ensure_type(logits, low_level_features.dtype)
                         sm_logits = tf.nn.softmax(logits)
 
         return logits, sm_logits
@@ -352,7 +371,7 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                                           pre_trained_model=None, 
                                           batch_norm_decay=None, data_format='channels_first')
 
-        logit, prediction = model(next_elem[0], True)
+        logit, prediction = model(next_elem[0], True, dtype)
 
         #logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
         
