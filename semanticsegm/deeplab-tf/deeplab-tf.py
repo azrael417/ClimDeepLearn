@@ -265,7 +265,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
+def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, model, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -367,7 +367,7 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
 
         #set up model
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
-                                         base_architecture='resnet_v2_101', 
+                                         base_architecture=model,
                                           pre_trained_model=None, 
                                           batch_norm_decay=None, data_format='channels_first')
 
@@ -377,22 +377,33 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
         
         #set up loss
         loss = None
+        
+        #cast the logits to fp32
+        logit = tf.cast(logit, tf.float32)
+
         if loss_type == "weighted":
-            logit = tf.cast(logit, tf.float32)
-            unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
-                                                                        logits=logit)
+            #cast weights to FP32
             w_cast = tf.cast(next_elem[2], tf.float32)
-            weighted = tf.multiply(unweighted, w_cast)
-            if output_sampling:
-                loss = tf.reduce_sum(weighted)
-            else:
-                # TODO: do we really need to normalize this?
-                #scale_factor = 1. / weighted.shape.num_elements()
-                loss = tf.reduce_sum(weighted) * scale_factor
-            tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
+            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1], 
+                                                          logits=logit, 
+                                                          weights=w_cast, 
+                                                          reduction=tf.losses.Reduction.SUM)
+            #unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
+            #                                                            logits=logit)
+            #w_cast = tf.cast(next_elem[2], tf.float32)
+            #weighted = tf.multiply(unweighted, w_cast)
+            #if output_sampling:
+            #    loss = tf.reduce_sum(weighted)
+            #else:
+            #    # TODO: do we really need to normalize this?
+            #    #scale_factor = 1. / weighted.shape.num_elements()
+            #    loss = tf.reduce_sum(weighted) * scale_factor
+            #tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
+            #one-hot-encode
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-            labels_one_hot = tf.cast(labels_one_hot, dtype)
+            #cast to FP32
+            labels_one_hot = tf.cast(labels_one_hot, tf.float32)
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
@@ -637,6 +648,7 @@ if __name__ == '__main__':
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
     AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--model",type=str,default="resnet_v2_101",help="Pick base model [resnet_v2_50, resnet_v2_101].")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
@@ -667,6 +679,7 @@ if __name__ == '__main__':
          learning_rate=parsed.lr,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
+         model=parsed.model,
          fs_type=parsed.fs,
          opt_type=parsed.optimizer,
          num_epochs=parsed.epochs,

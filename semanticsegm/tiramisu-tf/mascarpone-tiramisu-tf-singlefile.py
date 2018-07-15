@@ -140,8 +140,15 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3
 
 def median_pool(x, filter_size, strides=[1,1,1,1]):
     x_size = x.get_shape().as_list()
+
+    #if 3D input, expand dims first
+    if len(x_size) == 3:
+        x = tf.expand_dims(x, axis=-1)
     patches = tf.extract_image_patches(x, [1, filter_size, filter_size, 1], strides, 4*[1], 'SAME', name="median_pool")
-    patches = tf.reshape(patches, x_size[0:3]+[filter_size*filter_size]+[x_size[3]])
+    #if 4D input, we need to reshape
+    if len(x_size) == 4:
+        patches = tf.reshape(patches, x_size[0:3]+[filter_size*filter_size]+[x_size[3]])
+    #no matter whether 3 or 4D input, always axis 3 has to be pooled over
     medians = tf.contrib.distributions.percentile(patches, 50, axis=3, keep_dims=False)
     return medians
 
