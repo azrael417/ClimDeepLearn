@@ -55,6 +55,15 @@ image_height =  768
 image_width = 1152
 
 
+class StoreDictKeyPair(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        my_dict = {}
+        for kv in values.split(","):
+            k,v = kv.split("=")
+            my_dict[k] = v
+        setattr(namespace, self.dest, my_dict)
+
+
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
                             padding='same', data_format='channels_first',
@@ -236,7 +245,8 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
+def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -280,7 +290,6 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 
     #print some stats
     if comm_rank==0:
-        print("Learning Rate: {}".format(learning_rate))
         print("Num workers: {}".format(comm_size))
         print("Local batch size: {}".format(batch))
         if dtype == tf.float32:
@@ -297,8 +306,10 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         print("Loss scale factor: {}".format(scale_factor))
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
-        print("Optimizer type: {}".format(opt_type))
-        print("Gradient lag: {}".format(gradient_lag))
+        #print optimizer parameters
+        for k,v in optimizer.iteritems():
+            print("Solver Parameters: {k}: {v}".format(k=k,v=v))
+        #print("Optimizer type: {}".format(optimizer['opt_type']))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
@@ -381,12 +392,12 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
             global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        if opt_type.startswith("LARC"):
+        if optimizer['opt_type'].startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=gradient_lag)
+            train_op = get_larc_optimizer(optimizer, loss, global_step)
         else:
-            train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
+            train_op = get_optimizer(optimizer, loss, global_step)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -595,7 +606,6 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
@@ -607,7 +617,8 @@ if __name__ == '__main__':
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
-    AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    #AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--optimizer",action=StoreDictKeyPair)
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
@@ -618,7 +629,6 @@ if __name__ == '__main__':
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
-    AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
     parsed = AP.parse_args()
@@ -638,11 +648,10 @@ if __name__ == '__main__':
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          trn_sz=parsed.trn_sz,
-         learning_rate=parsed.lr,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
          fs_type=parsed.fs,
-         opt_type=parsed.optimizer,
+         optimizer=parsed.optimizer,
          num_epochs=parsed.epochs,
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
@@ -654,6 +663,5 @@ if __name__ == '__main__':
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
-         gradient_lag=parsed.gradient_lag,
          output_sampling=parsed.sampling,
          scale_factor=parsed.scale_factor)
