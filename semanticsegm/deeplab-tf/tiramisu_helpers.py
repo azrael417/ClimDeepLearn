@@ -72,35 +72,14 @@ def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=No
     return loss
 
 
-#helper func
-def get_dict_default(dictionary,varname,default):
-    var=default
-    if varname in dictionary:
-        var=dictionary[varname]
-    deftype=type(default)
-    return deftype(var)
-
-
 #optimizer
-def get_optimizer(optimizer, loss, global_step):
-    #get learning rate
-    learning_rate=get_dict_default(optimizer,"learning_rate",1.e-4)
-
+def get_optimizer(opt_type, loss, global_step, learning_rate, momentum=0.):
     #set up optimizers
-    opt_type=get_dict_default(optimizer,"opt_type","Adam")
-
-    #switch optimizer
     if opt_type == "Adam":
-        beta1=get_dict_default(optimizer,"beta1",0.9)
-        beta2=get_dict_default(optimizer,"beta2",0.999)
-        optim = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=beta1, beta2=beta2)
+        optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "RMSProp":
-        decay=get_dict_default(optimizer,"decay",0.9)
-        momentum=get_dict_default(optimizer,"momentum",0.)
-        centered=get_dict_default(optimizer,"centered",False)
-        optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate, decay=decay, momentum=momentum, centered=centered)
+        optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
     elif opt_type == "SGD":
-        momentum=get_dict_default(optimizer,"momentum",0.)
         optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
@@ -114,30 +93,13 @@ def get_optimizer(optimizer, loss, global_step):
     
 
 #larc optimizer:
-def get_larc_optimizer(optimizer, loss, global_step):
-    #get learning rate
-    learning_rate=get_dict_default(optimizer,"learning_rate",1.e-4)
-
-    #get LARC stuff
-    LARC_mode=get_dict_default(optimizer,"LARC_mode","clip")
-    LARC_eta=get_dict_default(optimizer,"LARC_eta",0.002)
-    LARC_epsilon=get_dict_default(optimizer,"LARC_epsilon",1./16000.)
-
-    #lag
-    gradient_lag=get_dict_default(optimizer,"gradient_lag",0)
-
+def get_larc_optimizer(opt_type, loss, global_step, learning_rate, momentum=0., LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=0):
     #set up optimizers
-    opt_type=get_dict_default(optimizer,"opt_type","LARC-Adam")
-
-    #set up optimizers
-    if opt_type == "LARC-Adam":
-        beta1=get_dict_default(optimizer,"beta1",0.9)
-        beta2=get_dict_default(optimizer,"beta2",0.999)
+    if opt_type == "Adam":
         optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    elif opt_type == "LARC-RMSProp":
+    elif opt_type == "RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-    elif opt_type == "LARC-SGD":
-        momentum=get_dict_default(optimizer,"momentum",0.)
+    elif opt_type == "SGD":
         optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))

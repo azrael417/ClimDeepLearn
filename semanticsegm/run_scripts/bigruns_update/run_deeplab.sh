@@ -6,13 +6,13 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=0
 export HOROVOD_SLEEP_INTERVAL=2
 export HOROVOD_USE_PRIORITY=0
 
-VENV=pyvenv_summit_v4
+VENV=pyvenv_summit_7.5.18
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py  --datadir ${1}/data/ --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam --batch 2 --dtype float16 --scale_factor ${4} --gradient-lag ${5} --disable_imsave --disable_checkpoints"
+APP="python ./deeplab-tf.py  --datadir ${1}/data/ --epochs ${2} --fs local --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam --model=resnet_v2_50  --scale_factor ${4} --gradient-lag ${5} --batch ${6}"
 
 export PAMI_ENABLE_STRIPING=0
 

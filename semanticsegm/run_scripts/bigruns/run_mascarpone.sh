@@ -12,7 +12,7 @@ source ${1}/${VENV}/bin/activate
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py  --datadir ${1}/data/ --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam --batch 2 --dtype float16 --scale_factor ${4} --gradient-lag ${5} --disable_imsave --disable_checkpoints"
+APP="python ./mascarpone-tiramisu-tf-singlefile.py  --datadir ${1}/data/ --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam  --scale_factor ${4} --gradient-lag ${5} --disable_imsave"
 
 export PAMI_ENABLE_STRIPING=0
 

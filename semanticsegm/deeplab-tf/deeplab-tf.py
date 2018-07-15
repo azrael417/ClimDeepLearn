@@ -9,7 +9,11 @@ sys.dont_write_bytecode = True
 
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
+from tensorflow.contrib.framework import arg_scope
 from tensorflow.python.ops import array_ops
+from tensorflow.contrib.slim.nets import resnet_v2
+from tensorflow.contrib.layers.python.layers import layers
+from tensorflow.contrib import layers as layers_lib
 import numpy as np
 import argparse
 
@@ -54,112 +58,63 @@ from tiramisu_helpers import *
 image_height =  768 
 image_width = 1152
 
+#arch specific
+_BATCH_NORM_DECAY = 0.9997
+_WEIGHT_DECAY = 5e-4
 
-class StoreDictKeyPair(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        my_dict = {}
-        for kv in values.split(","):
-            k,v = kv.split("=")
-            my_dict[k] = v
-        setattr(namespace, self.dest, my_dict)
-
-
-def conv(x, nf, sz, wd, stride=1): 
-    return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
-                            padding='same', data_format='channels_first',
-                            kernel_initializer= tfk.initializers.he_uniform(),
-                            bias_initializer=tf.initializers.zeros(),
-                            kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
-                            )
-
-
-def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
-
-    added = []
-    for i in range(n):
-        if bn:
-            with tf.name_scope("conv_bn_relu%i"%i) as scope:
-                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
-                b = tf.layers.batch_normalization(b, axis=1, training=training)
-                b = tf.nn.relu(b)
-                if p: b = tf.layers.dropout(b, rate=p, training=training)
-        else:
-            with tf.name_scope("conv_relu%i"%i) as scope:
-                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
-                b = tf.nn.relu(b)
-                if p: b = tf.layers.dropout(b, rate=p, training=training)
-
-        x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
-        added.append(b)
-
-    return x, added
-
-
-def transition_dn(x, p, wd, training, bn=False):
-    if bn:
-        with tf.name_scope("conv_bn_relu") as scope:
-            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
-            b = tf.layers.batch_normalization(b, axis=1, training=training)
-            b = tf.nn.relu(b)
-            if p: b = tf.layers.dropout(b, rate=p, training=training)
+def ensure_type(input, dtype):
+    if input.dtype != dtype:
+        return tf.cast(input, dtype)
     else:
-        with tf.name_scope("conv_relu") as scope:
-            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
-            b = tf.nn.relu(b)
-            if p: b = tf.layers.dropout(b, rate=p, training=training)
-    return b
+        return input
 
+def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_training, depth=256):
+    """Atrous Spatial Pyramid Pooling.
+    Args:
+      inputs: A tensor of size [batch, height, width, channels].
+      output_stride: The ResNet unit's stride. Determines the rates for atrous convolution.
+      the rates are (6, 12, 18) when the stride is 16, and doubled when 8.
+      batch_norm_decay: The moving average decay when estimating layer activation
+      statistics in batch normalization.
+      is_training: A boolean denoting whether the input is for training.
+      depth: The depth of the ResNet unit output.
+    Returns:
+      The atrous spatial pyramid pooling output.
+    """
+    with tf.variable_scope("aspp"):
+        if output_stride not in [8, 16]:
+            raise ValueError('output_stride must be either 8 or 16.')
+        
+        atrous_rates = [6, 12, 18]
+        if output_stride == 8:
+            atrous_rates = [2*rate for rate in atrous_rates]
 
-def down_path(x, nb_layers, growth_rate, p, wd, training, bn=False, filter_sz=3):
+        with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+            with arg_scope([layers.batch_norm], is_training=is_training):
+                inputs_size = tf.shape(inputs)[1:3]
+                # (a) one 1x1 convolution and three 3x3 convolutions with rates = (6, 12, 18) when output stride = 16.
+                # the rates are doubled when output stride = 8.
+                conv_1x1 = layers_lib.conv2d(inputs, depth, [1, 1], stride=1, scope="conv_1x1")
+                conv_3x3_1 = layers_lib.conv2d(inputs, depth, [3, 3], stride=1, rate=atrous_rates[0], scope='conv_3x3_1')
+                conv_3x3_2 = layers_lib.conv2d(inputs, depth, [3, 3], stride=1, rate=atrous_rates[1], scope='conv_3x3_2')
+                conv_3x3_3 = layers_lib.conv2d(inputs, depth, [3, 3], stride=1, rate=atrous_rates[2], scope='conv_3x3_3')
 
-    skips = []
-    for i,n in enumerate(nb_layers):
-        with tf.name_scope("DB%i"%i):
-            x, added = dense_block(n, x, growth_rate, p, wd, training=training, bn=bn, filter_sz=filter_sz)
-            skips.append(x)
-        with tf.name_scope("TD%i"%i):
-            x = transition_dn(x, p=p, wd=wd, training=training, bn=bn)
+                # (b) the image-level features
+                with tf.variable_scope("image_level_features"):
+                    # global average pooling
+                    image_level_features = tf.reduce_mean(inputs, [1, 2], name='global_average_pooling', keepdims=True)
+                    # 1x1 convolution with 256 filters( and batch normalization)
+                    image_level_features = layers_lib.conv2d(image_level_features, depth, [1, 1], stride=1, scope='conv_1x1')
+                    # bilinearly upsample features
+                    image_level_features = ensure_type(image_level_features, tf.float32)
+                    image_level_features = tf.image.resize_bilinear(image_level_features, inputs_size, name='upsample')
+                    image_level_features = ensure_type(image_level_features, inputs.dtype)
 
-    return skips, added
+                net = tf.concat([conv_1x1, conv_3x3_1, conv_3x3_2, conv_3x3_3, image_level_features], axis=3, name='concat')
+                net = layers_lib.conv2d(net, depth, [1, 1], stride=1, scope='conv_1x1_concat')
 
+    return net
 
-def reverse(a): 
-	return list(reversed(a))
-
-
-def transition_up(added,wd,training):
-    x = tf.concat(added,axis=1) 
-    _, ch, r, c = x.get_shape().as_list()
-    x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
-				   padding='same', data_format='channels_first', filters=ch,
-				   kernel_initializer=tfk.initializers.he_uniform(),
-				   bias_initializer=tf.initializers.zeros(),
-                   kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
-                   )
-    return x 
-    
-	
-def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3):
-    for i,n in enumerate(nb_layers):
-        x = transition_up(added,wd,training)
-        x = tf.concat([x,skips[i]],axis=1) #was axis=-1. Is that correct?
-        x, added = dense_block(n,x,growth_rate,p,wd,training=training,bn=bn,filter_sz=filter_sz)
-    return x
-
-
-def median_pool(x, filter_size, strides=[1,1,1,1]):
-    x_size = x.get_shape().as_list()
-
-    #if 3D input, expand dims first
-    if len(x_size) == 3:
-        x = tf.expand_dims(x, axis=-1)
-    patches = tf.extract_image_patches(x, [1, filter_size, filter_size, 1], strides, 4*[1], 'SAME', name="median_pool")
-    #if 4D input, we need to reshape
-    if len(x_size) == 4:
-        patches = tf.reshape(patches, x_size[0:3]+[filter_size*filter_size]+[x_size[3]])
-    #no matter whether 3 or 4D input, always axis 3 has to be pooled over
-    medians = tf.contrib.distributions.percentile(patches, 50, axis=3, keep_dims=False)
-    return medians
 
 def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
                                     initializer=None, regularizer=None,
@@ -175,40 +130,105 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
     return variable
 
 
-def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6, 
-                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3, median_filter=False):
-    
-    if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
-        nb_layers = list(nb_layers_per_block)
-    else: nb_layers = [nb_layers_per_block] * nb_dense_block
+#generate deeplab model
+def deeplab_v3_plus_generator(num_classes,
+                              output_stride,
+                              base_architecture,
+                              pre_trained_model,
+                              batch_norm_decay,
+                              data_format='channels_last'):
+    """Generator for DeepLab v3 plus models.
+    Args:
+      num_classes: The number of possible classes for image classification.
+      output_stride: The ResNet unit's stride. Determines the rates for atrous convolution.
+        the rates are (6, 12, 18) when the stride is 16, and doubled when 8.
+      base_architecture: The architecture of base Resnet building block.
+      pre_trained_model: The path to the directory that contains pre-trained models.
+      batch_norm_decay: The moving average decay when estimating layer activation
+        statistics in batch normalization.
+      data_format: The input format ('channels_last', 'channels_first', or None).
+        If set to None, the format is dependent on whether a GPU is available.
+        Only 'channels_last' is supported currently.
+    Returns:
+      The model function that takes in `inputs` and `is_training` and
+      returns the output tensor of the DeepLab v3 model.
+    """
+    if data_format is None:
+        # data_format = (
+        #     'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
+        pass
 
-    with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
+    if batch_norm_decay is None:
+        batch_norm_decay = _BATCH_NORM_DECAY
 
-        with tf.variable_scope("conv_input") as scope:
-            x = conv(img_input, nb_filter, sz=filter_sz, wd=wd)
-            if batchnorm:
-                x = tf.layers.batch_normalization(x, axis=1, training=training)
-            x = tf.nn.relu(x)
-            if p: x = tf.layers.dropout(x, rate=p, training=training)
+    if base_architecture not in ['resnet_v2_50', 'resnet_v2_101']:
+        raise ValueError("'base_architrecture' must be either 'resnet_v2_50' or 'resnet_v2_50'.")
 
-        with tf.name_scope("down_path") as scope:
-            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
-        
-        with tf.name_scope("up_path") as scope:
-            x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
+    if base_architecture == 'resnet_v2_50':
+        base_model = resnet_v2.resnet_v2_50
+    else:
+        base_model = resnet_v2.resnet_v2_101
 
-        with tf.name_scope("conv_output") as scope:
-            x = conv(x,nb_classes,sz=1,wd=wd)
-            if p: x = tf.layers.dropout(x, rate=p, training=training)
-            _,f,r,c = x.get_shape().as_list()
-        #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
-        x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
+    base_architecture = 'getter_scope/' + base_architecture
 
-        if median_filter:
-            x = median_pool(x, 3, [1,1,1,1])
+    def model(inputs, is_training, dtype=tf.float32):
+        with tf.variable_scope('getter_scope', custom_getter=float32_variable_storage_getter):
+            if dtype != tf.float32:
+                inputs = tf.cast(inputs, dtype)
+            return model_fp32(inputs, is_training)
 
-    return x, tf.nn.softmax(x)
+    def model_fp32(inputs, is_training):
+        """Constructs the ResNet model given the inputs."""
+        if data_format == 'channels_first':
+            # Convert the inputs from channels_last (NHWC) to channels_first (NCHW).
+            # This provides a large performance boost on GPU. See
+            # https://www.tensorflow.org/performance/performance_guide#data_formats
+            inputs = tf.transpose(inputs, [0, 2, 3, 1])
 
+        # tf.logging.info('net shape: {}'.format(inputs.shape))
+        # encoder
+        with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+            logits, end_points = base_model(inputs,
+                                            num_classes=None,
+                                            is_training=is_training,
+                                            global_pool=False,
+                                            output_stride=output_stride)
+
+        if is_training:
+            if pre_trained_model:
+                exclude = [base_architecture + '/logits', 'global_step']
+                variables_to_restore = tf.contrib.slim.get_variables_to_restore(exclude=exclude)
+                tf.train.init_from_checkpoint(pre_trained_model, {v.name.split(':')[0]: v for v in variables_to_restore})
+
+        inputs_size = tf.shape(inputs)[1:3]
+        net = end_points[base_architecture + '/block4']
+        encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training)
+
+        with tf.variable_scope("decoder"):
+            with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+                with arg_scope([layers.batch_norm], is_training=is_training):
+                    with tf.variable_scope("low_level_features"):
+                        low_level_features = end_points[base_architecture + '/block1/unit_3/bottleneck_v2/conv1']
+                        low_level_features = layers_lib.conv2d(low_level_features, 48,
+                                                               [1, 1], stride=1, scope='conv_1x1')
+                        low_level_features_size = tf.shape(low_level_features)[1:3]
+
+                    with tf.variable_scope("upsampling_logits"):
+                        encoder_output = ensure_type(encoder_output, tf.float32)
+                        net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
+                        net = ensure_type(net, low_level_features.dtype)
+                        net = tf.concat([net, low_level_features], axis=3, name='concat')
+                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
+                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
+                        net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                        net = ensure_type(net, tf.float32)
+                        logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
+                        logits = ensure_type(logits, low_level_features.dtype)
+                        sm_logits = tf.nn.softmax(logits)
+
+        return logits, sm_logits
+
+    return model
 
 
 def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, dtype, shuffle=False):
@@ -245,8 +265,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
-
+def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, model, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -290,6 +309,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 
     #print some stats
     if comm_rank==0:
+        print("Learning Rate: {}".format(learning_rate))
         print("Num workers: {}".format(comm_size))
         print("Local batch size: {}".format(batch))
         if dtype == tf.float32:
@@ -297,19 +317,14 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         else:
             print("Precision: {}".format("FP16"))
         print("Batch normalization: {}".format(batchnorm))
-        print("Blocks: {}".format(blocks))
-        print("Growth rate: {}".format(growth))
-        print("Filter size: {}".format(filter_sz))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
         print("Loss scale factor: {}".format(scale_factor))
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
-        #print optimizer parameters
-        for k,v in optimizer.iteritems():
-            print("Solver Parameters: {k}: {v}".format(k=k,v=v))
-        #print("Optimizer type: {}".format(optimizer['opt_type']))
+        print("Optimizer type: {}".format(opt_type))
+        print("Gradient lag: {}".format(gradient_lag))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
@@ -349,31 +364,46 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 
         #compute the input filter number based on number of channels used
         num_channels = len(channels)
-        nb_filter = 64
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False)
-        prediction_argmax = tf.argmax(prediction, axis=3)
-        prediction_argmax = median_pool(prediction_argmax, 3, strides=[1,1,1,1])
+        model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
+                                         base_architecture=model,
+                                          pre_trained_model=None, 
+                                          batch_norm_decay=None, data_format='channels_first')
 
+        logit, prediction = model(next_elem[0], True, dtype)
+
+        #logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
+        
         #set up loss
         loss = None
+        
+        #cast the logits to fp32
+        logit = tf.cast(logit, tf.float32)
+
         if loss_type == "weighted":
-            logit = tf.cast(logit, tf.float32)
-            unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
-                                                                        logits=logit)
+            #cast weights to FP32
             w_cast = tf.cast(next_elem[2], tf.float32)
-            weighted = tf.multiply(unweighted, w_cast)
-            if output_sampling:
-                loss = tf.reduce_sum(weighted)
-            else:
-                # TODO: do we really need to normalize this?
-                #scale_factor = 1. / weighted.shape.num_elements()
-                loss = tf.reduce_sum(weighted) * scale_factor
-            tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
+            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1], 
+                                                          logits=logit, 
+                                                          weights=w_cast, 
+                                                          reduction=tf.losses.Reduction.SUM)
+            #unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
+            #                                                            logits=logit)
+            #w_cast = tf.cast(next_elem[2], tf.float32)
+            #weighted = tf.multiply(unweighted, w_cast)
+            #if output_sampling:
+            #    loss = tf.reduce_sum(weighted)
+            #else:
+            #    # TODO: do we really need to normalize this?
+            #    #scale_factor = 1. / weighted.shape.num_elements()
+            #    loss = tf.reduce_sum(weighted) * scale_factor
+            #tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
         elif loss_type == "focal":
+            #one-hot-encode
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
-            labels_one_hot = tf.cast(labels_one_hot, dtype)
+            #cast to FP32
+            labels_one_hot = tf.cast(labels_one_hot, tf.float32)
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
@@ -392,16 +422,16 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
             global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        if optimizer['opt_type'].startswith("LARC"):
+        if opt_type.startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(optimizer, loss, global_step)
+            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=gradient_lag)
         else:
-            train_op = get_optimizer(optimizer, loss, global_step)
+            train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
-                                                    predictions=prediction_argmax,
+                                                    predictions=tf.argmax(prediction, axis=3),
                                                     num_classes=3,
                                                     weights=None,
                                                     metrics_collections=None,
@@ -546,7 +576,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op,
                                                                                                  (loss if per_rank_output else loss_avg),
-                                                                                                 prediction_argmax,
+                                                                                                 prediction,
                                                                                                  next_elem[1]],
                                                                                                 feed_dict={handle: val_handle})
                                 
@@ -554,14 +584,14 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
                                 if comm_rank == 0 and not disable_imsave:
                                     if have_imsave:
                                         imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_predictions[0,...]*100)
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
                                         imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
                                         imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],val_model_predictions[0,...]])
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
                                     else:
                                         np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_predictions[0,...]*100)
+                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
                                         np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
 
@@ -606,7 +636,7 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
+    AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
@@ -617,18 +647,17 @@ if __name__ == '__main__':
     AP.add_argument("--datadir",type=str,help="Path to input data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
-    #AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
-    AP.add_argument("--optimizer",action=StoreDictKeyPair)
+    AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--model",type=str,default="resnet_v2_101",help="Pick base model [resnet_v2_50, resnet_v2_101].")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
-    AP.add_argument("--filter-sz",type=int,default=3,help="Convolution filter size")
-    AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
     AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
+    AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
     parsed = AP.parse_args()
@@ -643,25 +672,25 @@ if __name__ == '__main__':
     #invoke main function
     main(input_path=parsed.datadir,
          channels=parsed.channels,
-         blocks=parsed.blocks,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          trn_sz=parsed.trn_sz,
+         learning_rate=parsed.lr,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
+         model=parsed.model,
          fs_type=parsed.fs,
-         optimizer=parsed.optimizer,
+         opt_type=parsed.optimizer,
          num_epochs=parsed.epochs,
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
          dtype=dtype,
          chkpt=parsed.chkpt,
-         filter_sz=parsed.filter_sz,
-         growth=parsed.growth,
          disable_checkpoints=parsed.disable_checkpoints,
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
+         gradient_lag=parsed.gradient_lag,
          output_sampling=parsed.sampling,
          scale_factor=parsed.scale_factor)
