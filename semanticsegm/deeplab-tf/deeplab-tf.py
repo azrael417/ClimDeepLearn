@@ -400,6 +400,8 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
                                                           logits=logit, 
                                                           weights=w_cast, 
                                                           reduction=tf.losses.Reduction.SUM)
+            if scale_factor != 1.0:
+                loss *= scale_factor
             #unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
             #                                                            logits=logit)
             #w_cast = tf.cast(next_elem[2], tf.float32)
