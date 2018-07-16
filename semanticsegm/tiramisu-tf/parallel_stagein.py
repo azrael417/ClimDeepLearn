@@ -144,8 +144,7 @@ def main():
                 files.extend([ {'srcname': f} for f in glob.glob(src) ])
 
         if len(files) < args.count:
-            print 'Not enough files found!  Needed {}, got {}!'.format(args.count,
-                                                                       len(files))
+            print('Not enough files found! Needed {}, got {}!'.format(args.count,len(files)))
             exit(1)
             
         # shuffle list
@@ -173,9 +172,9 @@ def main():
 
         t_scan_end = time.time()
         if not args.quiet:
-            print 'Scan complete ({:.2f} s): {} files, {:.1f} MB total'.format(t_scan_end - t_scan_start,
+            print('Scan complete ({:.2f} s): {} files, {:.1f} MB total'.format(t_scan_end - t_scan_start,
                                                                                len(files),
-                                                                               totalbytes / 1048576.)
+                                                                               totalbytes / 1048576.))
             sys.stdout.flush()
     else:
         # get file list from first rank
@@ -188,7 +187,7 @@ def main():
         if args.mkdir:
             os.makedirs(target_dir)
         else:
-            print 'ERROR: target directory {} does not exist - use --mkdir to create it'.format(target_dir)
+            print('ERROR: target directory {} does not exist - use --mkdir to create it'.format(target_dir))
             exit(1)
 
     # copy our chunk of the files, using subprocesses with timeouts
@@ -202,7 +201,7 @@ def main():
         cvt = SimpleFileCopier()
     elif args.cvt.startswith('climate:'):
         if not have_h5py:
-            print 'ERROR: climate file conversion not possible without h5py!'
+            print('ERROR: climate file conversion not possible without h5py!')
             exit(1)
         params = args.cvt.split(':')
         dtype = np.float16 if params[1] == 'fp16' else np.float32
@@ -212,7 +211,7 @@ def main():
             channels = None
         cvt = ClimateFileCopier(dtype=dtype, channels=channels)
     else:
-        print 'ERROR: unknown conversion type: {}'.format(args.cvt)
+        print('ERROR: unknown conversion type: {}'.format(args.cvt))
         exit(1)
 
     # request a copy for each file we own
@@ -236,14 +235,14 @@ def main():
                 still_pending.append(p)
                 continue
             except JobTimeoutException:
-                print 'WARNING: timeout for read of {} on rank {} - retrying...'.format(f['srcname'], comm_rank)
+                print('WARNING: timeout for read of {} on rank {} - retrying...'.format(f['srcname'], comm_rank))
             except Exception as e:
-                print 'WARNING: error on read of {} on rank {}: {}'.format(f['srcname'],
+                print('WARNING: error on read of {} on rank {}: {}'.format(f['srcname'],
                                                                            comm_rank,
-                                                                           traceback.format_exc(e))
+                                                                           traceback.format_exc(e)))
 
             if args.retries and retry_count >= args.retries:
-                print 'ERROR: too many file copy retries on rank {}'.format(comm_rank)
+                print('ERROR: too many file copy retries on rank {}'.format(comm_rank))
                 exit(1)
 
             retry_count += 1
@@ -266,7 +265,7 @@ def main():
     if comm_rank == 0 and not args.quiet:
         elapsed = t_copy_end - t_copy_start
         eff_bw = 1e-9 * totalbytes / elapsed 
-        print 'Copy complete ({:.2f} s): {:.2f} GB/s'.format(elapsed, eff_bw)
+        print('Copy complete ({:.2f} s): {:.2f} GB/s'.format(elapsed, eff_bw))
         sys.stdout.flush()
 
     # step 3: distribute copies of data via mpi, if needed
@@ -336,10 +335,10 @@ def main():
         if comm_rank == 0 and not args.quiet:
             elapsed = t_dist_end - t_dist_start
             eff_bw = 1e-9 * 1048576. * total_dist_size / elapsed
-            print 'Dist complete ({:.2f} s): {} files, {:.1f} MB, {:.2f} GB/s'.format(elapsed,
+            print('Dist complete ({:.2f} s): {} files, {:.1f} MB, {:.2f} GB/s'.format(elapsed,
                                                                                       total_dist_files,
                                                                                       total_dist_size,
-                                                                                      eff_bw)
+                                                                                      eff_bw))
 
 if __name__ == '__main__':
     main()
