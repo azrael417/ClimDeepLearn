@@ -53,6 +53,7 @@ except:
 
 #import helpers
 from tiramisu_helpers import *
+import graph_flops
 
 #GLOBAL CONSTANTS
 image_height =  768 
@@ -423,6 +424,12 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
         if cluster_loss_weight > 0.0:
             loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
 
+        flops = graph_flops.graph_flops(format='NHWC',
+                                        batch=batch)
+        if horovod:
+            flops *= hvd.size()
+        print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+
         if horovod:
             loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
         else:
@@ -454,6 +461,10 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
             iou_avg = hvd.allreduce(iou_op)
         else:
             iou_avg = tf.identity(iou_op)
+
+        with tf.device('/device:GPU:0'):
+            mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
+                              tf.contrib.memory_stats.BytesLimit() ]
 
         #compute epochs and stuff:
         if fs_type == "local":
@@ -540,6 +551,9 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
             epoch = 1
             step = 1
 
+            prev_mem_usage = 0
+            t_sustained_start = time.time()
+
             nvtx.RangePush("Training Loop", 4)
             nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
@@ -549,9 +563,12 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
                 try:
                     nvtx.RangePush("Step", step)
                     #construct feed dict
+                    t_inst_start = time.time()
                     _, tmp_loss = sess.run([train_op,
                                             (loss if per_rank_output else loss_avg)],
                                            feed_dict={handle: trn_handle})
+                    t_inst_end = time.time()
+                    mem_used = sess.run(mem_usage_ops)
                     train_steps += 1
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
@@ -562,21 +579,25 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
                     #print step report
                     eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
                     if (train_steps % loss_print_interval) == 0:
+                        mem_used = sess.run(mem_usage_ops)
                         if per_rank_output:
-                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
+                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {:.3f}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
                         else:
                             if comm_rank == 0:
-                                print("REPORT: training loss for step {} (of {}) is {}, time {}".format(train_steps, num_steps, train_loss, time.time()-start_time))
+                                if mem_used[0] > prev_mem_usage:
+                                    print("memory usage: {:.2f} GB / {:.2f} GB".format(mem_used[0] / 2.0**30, mem_used[1] / 2.0**30))
+                                    prev_mem_usage = mem_used[0]
+                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}".format(train_steps, num_steps, train_loss, time.time()-start_time, 1e-12 * flops / (t_inst_end-t_inst_start)))
 
                     #do the validation phase
                     if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
                         if per_rank_output:
-                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
+                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
                         else:
                             if comm_rank == 0:
-                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {} s".format(epoch, num_epochs, train_loss, time.time() - start_time))
+                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -631,6 +652,7 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
                         #reset counters
                         epoch += 1
                         step = 0
+                        t_sustained_start = time.time()
 
                         nvtx.RangePop() # Epoch
                         nvtx.RangePush("Epoch", epoch)

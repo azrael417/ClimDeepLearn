@@ -49,6 +49,7 @@ except:
 
 #import helpers
 from tiramisu_helpers import *
+import graph_flops
 
 #GLOBAL CONSTANTS
 image_height =  768 
@@ -381,6 +382,12 @@ def main(input_path, channels, blocks, weights, image_dir, checkpoint_dir, trn_s
         #if cluster loss is enabled
         if cluster_loss_weight > 0.0:
             loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
+
+        flops = graph_flops.graph_flops(format='NCHW',
+                                        batch=batch)
+        if horovod:
+            flops *= hvd.size()
+        print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
 
         if horovod:
             loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
