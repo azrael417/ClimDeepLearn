@@ -505,7 +505,8 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
                                         batch=batch)
         if horovod:
             flops *= hvd.size()
-        print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+        if comm_rank == 0:
+            print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
 
         if horovod:
             loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
