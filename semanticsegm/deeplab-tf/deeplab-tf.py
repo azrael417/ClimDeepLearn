@@ -146,6 +146,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
 def deeplab_v3_plus_generator(num_classes,
                               output_stride,
                               base_architecture,
+                              decoder,
                               pre_trained_model,
                               batch_norm_decay,
                               data_format='channels_last'):
@@ -226,16 +227,89 @@ def deeplab_v3_plus_generator(num_classes,
                         low_level_features_size = tf.shape(low_level_features)[1:3]
 
                     with tf.variable_scope("upsampling_logits"):
-                        encoder_output = ensure_type(encoder_output, tf.float32)
-                        net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
-                        net = ensure_type(net, low_level_features.dtype)
-                        net = tf.concat([net, low_level_features], axis=3, name='concat')
-                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
-                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
-                        net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
-                        net = ensure_type(net, tf.float32)
-                        logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
-                        logits = ensure_type(logits, low_level_features.dtype)
+                        if decoder == 'bilinear':
+                            encoder_output = ensure_type(encoder_output, tf.float32)
+                            net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
+                            net = ensure_type(net, low_level_features.dtype)
+                            net = tf.concat([net, low_level_features], axis=3, name='concat')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
+                            net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                            net = ensure_type(net, tf.float32)
+                            logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
+                            logits = ensure_type(logits, low_level_features.dtype)
+                        elif decoder.startswith('deconv'):
+                            # expect encoder output at 1/8x input, low level
+                            #  features as 1/4x input
+                            #print 'SIZES', encoder_output.shape.as_list(), low_level_features.shape.as_list(), inputs.shape.as_list()
+                            assert 8*encoder_output.shape.as_list()[1] == inputs.shape.as_list()[1]
+                            assert 4*low_level_features.shape.as_list()[1] == inputs.shape.as_list()[1]
+                            encoder_channels = encoder_output.shape.as_list()[3]
+                            low_level_channels = low_level_features.shape.as_list()[3]
+                            inputs_channels = inputs.shape.as_list()[3]
+                            net = tf.layers.conv2d_transpose(inputs=encoder_output,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last',
+                                                             filters=encoder_channels,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            net = tf.concat([net, low_level_features], axis=3, name='concat')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
+                            # two 2x deconvs instead of the 4x bilinear scale
+                            net = tf.layers.conv2d_transpose(inputs=net,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last',
+                                                             filters=256,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            net = tf.layers.conv2d_transpose(inputs=net,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last',
+                                                             filters=256,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            if decoder == 'deconv1x':
+                                # incorporate input data at this level
+                                skip = tf.layers.conv2d(inputs, 64, [3, 3],
+                                                        padding='same',
+                                                        data_format='channels_last',
+				                        kernel_initializer=tfk.initializers.he_uniform(),
+				                        bias_initializer=tf.initializers.zeros(),
+                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                skip = tf.layers.conv2d(skip, 128, [3, 3],
+                                                        padding='same',
+                                                        data_format='channels_last',
+				                        kernel_initializer=tfk.initializers.he_uniform(),
+				                        bias_initializer=tf.initializers.zeros(),
+                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                net = tf.concat([net, skip], axis=3)
+                                net = tf.layers.conv2d(net, 256, [3, 3],
+                                                       padding='same',
+                                                       data_format='channels_last',
+				                       kernel_initializer=tfk.initializers.he_uniform(),
+				                       bias_initializer=tf.initializers.zeros(),
+                                                       kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                net = tf.layers.conv2d(net, 256, [3, 3],
+                                                       padding='same',
+                                                       data_format='channels_last',
+				                       kernel_initializer=tfk.initializers.he_uniform(),
+				                       bias_initializer=tf.initializers.zeros(),
+                                                       kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            
+                            logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                        else:
+                            print 'ERROR: unknown decoder type:', decoder
+                            assert False
                         sm_logits = tf.nn.softmax(logits)
 
         return logits, sm_logits
@@ -277,7 +351,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, model, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -379,7 +453,8 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
 
         #set up model
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
-                                         base_architecture=model,
+                                          base_architecture=model,
+                                          decoder=decoder,
                                           pre_trained_model=None, 
                                           batch_norm_decay=None, data_format='channels_first')
 
@@ -685,6 +760,7 @@ if __name__ == '__main__':
    # AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     AP.add_argument("--optimizer",action=StoreDictKeyPair)
     AP.add_argument("--model",type=str,default="resnet_v2_101",help="Pick base model [resnet_v2_50, resnet_v2_101].")
+    AP.add_argument("--decoder",type=str,default="bilinear",help="Pick decoder [bilinear,deconv,deconv1x]")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
@@ -715,6 +791,7 @@ if __name__ == '__main__':
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
          model=parsed.model,
+         decoder=parsed.decoder,
          fs_type=parsed.fs,
          optimizer=parsed.optimizer,
          num_epochs=parsed.epochs,
