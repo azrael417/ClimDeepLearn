@@ -27,9 +27,7 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp run_deeplab.sh ${run_dir}/
 cp run_deeplab_fp16.sh ${run_dir}/
-cp ../../deeplab-tf/parallel_stagein.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf*.py ${run_dir}/
-cp ../../deeplab-tf/tiramisu_helpers.py ${run_dir}/
+cp ../../deeplab-tf/*.py ${run_dir}/
 
 #step in
 cd ${run_dir}
