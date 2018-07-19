@@ -373,7 +373,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -411,7 +411,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     if comm_rank == 0:
         print("Loading data...")
     trn_data = load_data(input_path_train, True, trn_sz)
-    val_data = load_data(input_path_validation, False)
+    val_data = load_data(input_path_validation, False, val_sz)
     if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("Shape of val_data is {}".format(val_data.shape[0]))
@@ -782,6 +782,7 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
@@ -821,6 +822,7 @@ if __name__ == '__main__':
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          trn_sz=parsed.trn_sz,
+         val_sz=parsed.val_sz,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
          model=parsed.model,
