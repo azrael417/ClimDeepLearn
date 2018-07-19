@@ -12,7 +12,7 @@ source ${1}/${VENV}/bin/activate
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./tiramisu-tf.py  --datadir_train ${1}/train/data --datadir_validation ${1}/validation/data --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --optimizer opt_type=LARC-Adam,learning_rate=${3},gradient_lag=${5}  --scale_factor ${4}"
+APP="python ./tiramisu-tf.py  --datadir_train ${1}/train/data --datadir_validation ${1}/validation/data --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=${3},gradient_lag=${5} --scale_factor ${4}"
 
 export PAMI_ENABLE_STRIPING=0
 

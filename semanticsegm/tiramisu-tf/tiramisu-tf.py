@@ -223,7 +223,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -332,10 +332,11 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype),
+        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
                                                        ((batch, len(channels), image_height, image_width),
                                                         (batch, image_height, image_width),
-                                                        (batch, image_height, image_width))
+                                                        (batch, image_height, image_width),
+                                                        (batch))
                                                        )
         next_elem = iterator.get_next()
         
@@ -557,12 +558,13 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                         while True:
                             try:
                                 #construct feed dict
-                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op,
-                                                                                                 (loss if per_rank_output else loss_avg),
-                                                                                                 prediction_argmax,
-                                                                                                 next_elem[1]],
-                                                                                                feed_dict={handle: val_handle})
-                                
+                                _, tmp_loss, val_model_predictions, val_model_labels, val_model_filenames = sess.run([iou_update_op,
+                                                                                                                      (loss if per_rank_output else loss_avg),
+                                                                                                                      prediction_argmax,
+                                                                                                                      next_elem[1], 
+                                                                                                                      next_elem[3]],
+                                                                                                                      feed_dict={handle: val_handle})
+
                                 #print some images
                                 if comm_rank == 0 and not disable_imsave:
                                     if have_imsave:
@@ -573,10 +575,10 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                                         imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],val_model_predictions[0,...]])
                                     else:
-                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_predictions[0,...]*100)
-                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                        np.savez(image_dir+'/test_epoch'+str(epoch)+'_estep'
+                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=val_model_predictions[0,...]*100, 
+                                                                                                 label=val_model_labels[0,...]*100,
+                                                                                                 filename=val_model_filenames[0])
 
                                 eval_loss += tmp_loss
                                 eval_steps += 1

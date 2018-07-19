@@ -310,7 +310,7 @@ class h5_input_reader(object):
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     def read(self, datafile):
-        path = self.path+'/'+datafile
+        path = os.path.join(self.path,datafile)
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
@@ -323,13 +323,14 @@ class h5_input_reader(object):
         #nvtx.RangePop()
         #end_time = time.time()
         #print "Time to read %s = %.3f s" % (path, end_time-begin_time)
-        return data, label, weights
+        return data, label, weights, path
 
     def sequential_read(self, datafile):
         
         #data
         #begin_time = time.time()
-        with h5.File(self.path+'/'+datafile, "r", driver="core", backing_store=False, libver="latest") as f:
+        path = os.path.join(self.path,datafile)
+        with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
                 self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
@@ -352,7 +353,7 @@ class h5_input_reader(object):
         #end_time = time.time()
         #print "Time to read image %.3f s" % (end_time-begin_time)
 
-        return data, label, weights
+        return data, label, weights, path
 
 
 #load data routine
