@@ -147,6 +147,7 @@ def deeplab_v3_plus_generator(num_classes,
                               output_stride,
                               base_architecture,
                               decoder,
+                              batchnorm,
                               pre_trained_model,
                               batch_norm_decay,
                               data_format='channels_last'):
@@ -185,10 +186,26 @@ def deeplab_v3_plus_generator(num_classes,
     base_architecture = 'getter_scope/' + base_architecture
 
     def model(inputs, is_training, dtype=tf.float32):
+        # we can't directly control the instantiation of batchnorms, but
+        #  we can monkey-patch the TF module to turn them into nop's
+        if not batchnorm:
+            from tensorflow.contrib.framework.python.ops import add_arg_scope
+            from tensorflow.contrib.layers.python.layers import layers as layers_to_hack
+            @add_arg_scope
+            def dummy_batch_norm(input, *args, **kwargs):
+                # ideally we'd just pass the input straight through, but
+                #  activations in deep networks can overflow fp16's range
+                input = tf.multiply(input, 0.5)
+                return input
+            orig_batch_norm = layers_to_hack.batch_norm
+            layers_to_hack.batch_norm = dummy_batch_norm
         with tf.variable_scope('getter_scope', custom_getter=float32_variable_storage_getter):
             if dtype != tf.float32:
                 inputs = tf.cast(inputs, dtype)
-            return model_fp32(inputs, is_training)
+            m = model_fp32(inputs, is_training)
+        if not batchnorm:
+            layers_to_hack.batch_norm = orig_batch_norm
+        return m
 
     def model_fp32(inputs, is_training):
         """Constructs the ResNet model given the inputs."""
@@ -455,6 +472,7 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
                                           base_architecture=model,
                                           decoder=decoder,
+                                          batchnorm=batchnorm,
                                           pre_trained_model=None, 
                                           batch_norm_decay=None, data_format='channels_first')
 
