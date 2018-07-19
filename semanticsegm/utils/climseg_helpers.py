@@ -81,10 +81,60 @@ def get_dict_default(dictionary,varname,default):
     return deftype(var)
 
 
+#learning rate
+def get_learning_rate(optimizer, global_step, steps_per_epoch):
+    with tf.device("/device:CPU:0"):
+        learning_rate=tf.constant(get_dict_default(optimizer,"learning_rate",1.e-4),
+                                  dtype=tf.float32)
+
+        lr_decay_mode = get_dict_default(optimizer, "lr_decay", "none")
+        if lr_decay_mode == "none":
+            pass
+        elif lr_decay_mode.startswith("poly:"):
+            _, power, max_epoch = lr_decay_mode.split(":")
+            # tf.train.polynomial_decay doesn't have a staircase mode, so
+            #  implement it ourselves
+            global_epoch = tf.floordiv(global_step, steps_per_epoch)
+            learning_rate = tf.train.polynomial_decay(learning_rate=learning_rate,
+                                                      global_step=global_epoch,
+                                                      decay_steps=int(max_epoch),
+                                                      end_learning_rate=0,
+                                                      power=float(power))
+        elif lr_decay_mode.startswith("exp:"):
+            args = lr_decay_mode.split(":")
+            rate = float(args[1])
+            epochs = int(args[2]) if (len(args) > 2) else 1
+            learning_rate = tf.train.exponential_decay(learning_rate=learning_rate,
+                                                       global_step=global_step,
+                                                       decay_steps=(steps_per_epoch * epochs),
+                                                       decay_rate=rate,
+                                                       staircase=True)
+        elif lr_decay_mode.startswith("piece:"):
+            args = lr_decay_mode.split(":")
+            assert (len(args) % 2) == 1
+            global_epoch = tf.floordiv(global_step, steps_per_epoch)
+            prev_scale = lambda: 1.0
+            cases = []
+            for i in xrange(1,len(args),2):
+                epoch_cutoff = int(args[i])
+                cases.append((tf.less(global_epoch, epoch_cutoff),
+                              prev_scale))
+                lr_scale = float(args[i+1])
+                # minor shenanigans to capture by value in lambda
+                prev_scale = (lambda x: lambda: x)(lr_scale)
+            learning_rate *= tf.case(pred_fn_pairs=cases,
+                                     default=prev_scale,
+                                     exclusive=False)
+        else:
+            print "ERROR: Unknown lr_decay mode:", lr_decay_mode
+            exit(1)
+
+    return learning_rate
+
 #optimizer
-def get_optimizer(optimizer, loss, global_step):
+def get_optimizer(optimizer, loss, global_step, steps_per_epoch):
     #get learning rate
-    learning_rate=get_dict_default(optimizer,"learning_rate",1.e-4)
+    learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
 
     #set up optimizers
     opt_type=get_dict_default(optimizer,"opt_type","Adam")
@@ -110,13 +160,13 @@ def get_optimizer(optimizer, loss, global_step):
         optim = hvd.DistributedOptimizer(optim)
 
     #return minimizer
-    return optim.minimize(loss, global_step=global_step)
+    return optim.minimize(loss, global_step=global_step), learning_rate
     
 
 #larc optimizer:
-def get_larc_optimizer(optimizer, loss, global_step):
+def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch):
     #get learning rate
-    learning_rate=get_dict_default(optimizer,"learning_rate",1.e-4)
+    learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
 
     #get LARC stuff
     LARC_mode=get_dict_default(optimizer,"LARC_mode","clip")
@@ -195,7 +245,7 @@ def get_larc_optimizer(optimizer, loss, global_step):
     if gradient_lag > 0:
         grad_updates = tf.group([ grad_updates ] + lag_ops)
 
-    return grad_updates
+    return grad_updates, learning_rate
 
 class SharedExchangeBuffer(object):
     def __init__(self, count, size):

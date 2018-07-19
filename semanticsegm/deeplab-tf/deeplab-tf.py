@@ -440,6 +440,17 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         print("Disable checkpoints: {}".format(disable_checkpoints))
         print("Disable image save: {}".format(disable_imsave))
 
+    #compute epochs and stuff:
+    if fs_type == "local":
+        num_samples = trn_data.shape[0] // comm_local_size
+    else:
+        num_samples = trn_data.shape[0] // comm_size
+    num_steps_per_epoch = num_samples // batch
+    num_steps = num_epochs*num_steps_per_epoch
+    if per_rank_output:
+        print("Rank {} does {} steps per epoch".format(comm_rank,
+                                                       num_steps_per_epoch))
+
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
@@ -550,9 +561,11 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         if optimizer['opt_type'].startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(optimizer, loss, global_step)
+            train_op, lr = get_larc_optimizer(optimizer, loss, global_step,
+                                              num_steps_per_epoch)
         else:
-            train_op = get_optimizer(optimizer, loss, global_step)
+            train_op, lr = get_optimizer(optimizer, loss, global_step,
+                                         num_steps_per_epoch)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -573,16 +586,6 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
                               tf.contrib.memory_stats.BytesLimit() ]
 
-        #compute epochs and stuff:
-        if fs_type == "local":
-            num_samples = trn_data.shape[0] // comm_local_size
-        else:
-            num_samples = trn_data.shape[0] // comm_size
-        num_steps_per_epoch = num_samples // batch
-        num_steps = num_epochs*num_steps_per_epoch
-        if per_rank_output:
-            print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
-        
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
@@ -671,9 +674,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                     nvtx.RangePush("Step", step)
                     #construct feed dict
                     t_inst_start = time.time()
-                    _, tmp_loss = sess.run([train_op,
-                                            (loss if per_rank_output else loss_avg)],
-                                           feed_dict={handle: trn_handle})
+                    _, tmp_loss, cur_lr = sess.run([train_op,
+                                                    (loss if per_rank_output else loss_avg),
+                                                    lr],
+                                                   feed_dict={handle: trn_handle})
                     t_inst_end = time.time()
                     mem_used = sess.run(mem_usage_ops)
                     train_steps += 1
@@ -694,7 +698,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                 if mem_used[0] > prev_mem_usage:
                                     print("memory usage: {:.2f} GB / {:.2f} GB".format(mem_used[0] / 2.0**30, mem_used[1] / 2.0**30))
                                     prev_mem_usage = mem_used[0]
-                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}".format(train_steps, num_steps, train_loss, time.time()-start_time, 1e-12 * flops / (t_inst_end-t_inst_start)))
+                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}, lr {:.2g}".format(train_steps, num_steps, train_loss, time.time()-start_time, 1e-12 * flops / (t_inst_end-t_inst_start), cur_lr))
 
                     #do the validation phase
                     if train_steps_in_epoch == 0:
