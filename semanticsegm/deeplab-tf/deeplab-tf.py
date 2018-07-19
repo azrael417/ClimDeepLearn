@@ -52,6 +52,11 @@ except:
     horovod = False
 
 #import helpers
+try:
+    script_path = os.path.dirname(sys.argv[0])
+except:
+    script_path = '.'
+sys.path.append(os.path.join(script_path, '..', 'utils'))
 from climseg_helpers import *
 import graph_flops
 
