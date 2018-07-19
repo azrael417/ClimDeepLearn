@@ -2,7 +2,7 @@ import tensorflow as tf
 from collections import defaultdict
 
 def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
-                training = True, verbose = False):
+                training = True, verbose = False, sess_config = None):
     if g is None:
         g = tf.get_default_graph()
     if targets:
@@ -180,7 +180,7 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                 in_size = tuple((in_size[0], in_size[3], in_size[1], in_size[2]))
             # kind of annoying - we have to evaluate the second input to
             #  determine the output tensor size
-            out_size = tf.Session().run(o.inputs[1])
+            out_size = tf.Session(config=sess_config).run(o.inputs[1])
 
             # each output pixel is assumed to require 11 flops (2 multiplies
             #  for each of the 2x2 input pixel window + 3 additions)

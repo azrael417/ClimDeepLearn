@@ -12,7 +12,7 @@ source ${1}/${VENV}/bin/activate
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./deeplab-tf.py  --datadir ${1}/data/ --epochs ${2} --fs local --loss weighted --cluster_loss_weight 0.0  --optimizer opt_type=LARC-Adam,learning_rate=${3},gradient_lag=${5} --model=resnet_v2_50 --scale_factor ${4} --batch ${6}"
+APP="python ./deeplab-tf.py  --datadir_train ${1}/train/data --datadir_validation ${1}/validation/data --epochs ${2} --fs local --loss weighted --cluster_loss_weight 0.0  --optimizer opt_type=LARC-Adam,learning_rate=${3},gradient_lag=${5} --model=resnet_v2_50 --scale_factor ${4} --batch ${6}"
 
 export PAMI_ENABLE_STRIPING=0
 
