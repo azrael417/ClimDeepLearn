@@ -356,7 +356,7 @@ class h5_input_reader(object):
 
 
 #load data routine
-def load_data(input_path, max_files):
+def load_data(input_path, shuffle=True, max_files=-1):
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
 
@@ -368,26 +368,21 @@ def load_data(input_path, max_files):
     files = np.asarray(files)
 
     #PERMUTATION OF DATA
-    np.random.seed(12345)
-    shufflefile = "./shuffle_indices.npy"
-    if not os.path.isfile(shufflefile):
-        shuffle_indices = np.random.permutation(len(files))
-        if hvd.rank() == 0:
-            np.save(shufflefile,shuffle_indices)
-    else:
-        try:
-            shuffle_indices = np.load(shufflefile)
-        except:
+    if shuffle:
+        np.random.seed(12345)
+        shufflefile = "./shuffle_indices.npy"
+        if not os.path.isfile(shufflefile):
             shuffle_indices = np.random.permutation(len(files))
-    files = files[shuffle_indices]
+            if hvd.rank() == 0:
+                np.save(shufflefile,shuffle_indices)
+        else:
+            try:
+                shuffle_indices = np.load(shufflefile)
+            except:
+                shuffle_indices = np.random.permutation(len(files))
+        files = files[shuffle_indices]
 
-    #Create train/validation/test split
-    size = len(files)
-    trn_data = files[:int(0.8 * size)]
-    tst_data = files[int(0.8 * size):int(0.9 * size)]
-    val_data = files[int(0.9 * size):]
-
-    return trn_data, val_data, tst_data
+    return files
 
 
 #load model wrapper

@@ -351,7 +351,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -388,9 +388,11 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, loss_
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path, trn_sz)
+    trn_data = load_data(input_path_train, True, trn_sz)
+    val_data = load_data(input_path_validation, False)
     if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
+        print("Shape of val_data is {}".format(val_data.shape[0]))
         print("done.")
 
     #print some stats
@@ -756,7 +758,8 @@ if __name__ == '__main__':
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
-    AP.add_argument("--datadir",type=str,help="Path to input data")
+    AP.add_argument("--datadir_train",type=str,help="Path to training data")
+    AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
    # AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
@@ -784,7 +787,8 @@ if __name__ == '__main__':
     dtype=getattr(tf, parsed.dtype)
 
     #invoke main function
-    main(input_path=parsed.datadir,
+    main(input_path_train=parsed.datadir_train,
+         input_path_validation=parsed.datadir_validation,
          channels=parsed.channels,
          weights=weights,
          image_dir=parsed.output,

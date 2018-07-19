@@ -33,16 +33,19 @@ cp ../../deeplab-tf/*.py ${run_dir}/
 cd ${run_dir}
 
 #datadir
-datadir="/gpfs/alpinetds/world-shared/csc275/climdata_reformat"
+datadir="/gpfs/alpinetds/world-shared/csc275/climdata_split"
 scratchdir="/mnt/bb/"$(whoami)""
-nperproc=250
-numfiles=$(( ${nprocspn} * ${nperproc} )) 
+nperproc_train=250
+nperproc_validation=25
+numfiles_train=$(( ${nprocspn} * ${nperproc_train} )) 
+numfiles_validation=$(( ${nprocspn} * ${nperproc_validation} ))
 
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 
 echo "starting stage_in_parallel.sh " `date`
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles}
+jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir}/train ${scratchdir}/train ${numfiles_train}
+jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir}/validation ${scratchdir}/validation ${numfiles_validation}
 echo "finished stage_in_parallel.sh" `date`
 
 # Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD
