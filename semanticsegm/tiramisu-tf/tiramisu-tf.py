@@ -362,18 +362,14 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
         #set up loss
         loss = None
         if loss_type == "weighted":
-            logit = tf.cast(logit, tf.float32)
-            unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
-                                                                        logits=logit)
+            #cast weights to FP32
             w_cast = tf.cast(next_elem[2], tf.float32)
-            weighted = tf.multiply(unweighted, w_cast)
-            if output_sampling:
-                loss = tf.reduce_sum(weighted)
-            else:
-                # TODO: do we really need to normalize this?
-                #scale_factor = 1. / weighted.shape.num_elements()
-                loss = tf.reduce_sum(weighted) * scale_factor
-            tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
+            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1], 
+                                                          logits=logit, 
+                                                          weights=w_cast, 
+                                                          reduction=tf.losses.Reduction.SUM)
+            if scale_factor != 1.0:
+                loss *= scale_factor
         elif loss_type == "focal":
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
             labels_one_hot = tf.cast(labels_one_hot, dtype)
