@@ -48,6 +48,11 @@ except:
     horovod = False
 
 #import helpers
+try:
+    script_path = os.path.dirname(sys.argv[0])
+except:
+    script_path = '.'
+sys.path.append(os.path.join(script_path, '..', 'utils'))
 from climseg_helpers import *
 import graph_flops
 
@@ -246,7 +251,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path_train, input_path_validation, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, loss_type, cluster_loss_weight, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
 
     #init horovod
     nvtx.RangePush("init horovod", 1)
@@ -285,7 +290,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
     if comm_rank == 0:
         print("Loading data...")
     trn_data  = load_data(input_path_train, True, trn_sz)
-    val_data  = load_data(input_path_validation, False)
+    val_data  = load_data(input_path_validation, False, val_sz)
     if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("done.")
@@ -316,6 +321,16 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
         print("Disable image save: {}".format(disable_imsave))
+
+    #compute epochs and stuff:
+    if fs_type == "local":
+        num_samples = trn_data.shape[0] // comm_local_size
+    else:
+        num_samples = trn_data.shape[0] // comm_size
+    num_steps_per_epoch = num_samples // batch
+    num_steps = num_epochs*num_steps_per_epoch
+    if per_rank_output:
+        print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
 
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
@@ -401,9 +416,11 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
         if optimizer['opt_type'].startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(optimizer, loss, global_step)
+            train_op, lr = get_larc_optimizer(optimizer, loss, global_step,
+                                              num_steps_per_epoch)
         else:
-            train_op = get_optimizer(optimizer, loss, global_step)
+            train_op, lr = get_optimizer(optimizer, loss, global_step,
+                                         num_steps_per_epoch)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -419,16 +436,6 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
             iou_avg = hvd.allreduce(iou_op)
         else:
             iou_avg = tf.identity(iou_op)
-
-        #compute epochs and stuff:
-        if fs_type == "local":
-            num_samples = trn_data.shape[0] // comm_local_size
-        else:
-            num_samples = trn_data.shape[0] // comm_size
-        num_steps_per_epoch = num_samples // batch
-        num_steps = num_epochs*num_steps_per_epoch
-        if per_rank_output:
-            print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
         
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
@@ -622,6 +629,7 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
@@ -661,6 +669,7 @@ if __name__ == '__main__':
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          trn_sz=parsed.trn_sz,
+         val_sz=parsed.val_sz,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
          fs_type=parsed.fs,
