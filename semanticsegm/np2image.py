@@ -19,10 +19,13 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 for pred in glob.glob(sys.argv[1]):
-    label = re.sub(r'_pred_', '_label_', pred)
-    comb = re.sub(r'_pred_', '_combined_', re.sub('\.npy', '.gif', pred))
-    pdata = np.load(pred) / 100
-    ldata = np.load(label) / 100
-    outdata = colormap[ldata,pdata]
-    imsave(comb, outdata)
+
+    outfilename = re.sub('\.npz', '.gif', pred)
+
+    data = np.load(sys.argv[1])
+    pdata = data["prediction"] / 100
+    ldata = data["label"] / 100
+
+    outdata = colormap[ldata.astype(int),pdata.astype(int)]
+    imsave(outfilename, outdata)
     
