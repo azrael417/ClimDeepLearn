@@ -735,7 +735,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
                                     else:
                                         np.savez(image_dir+'/test_epoch'+str(epoch)+'_estep'
-                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=val_model_predictions[0,...]*100, 
+                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(val_model_predictions[0,...],axis=2)*100, 
                                                                                                  label=val_model_labels[0,...]*100,
                                                                                                  filename=val_model_filenames[0])
 

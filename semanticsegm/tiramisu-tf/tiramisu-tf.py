@@ -167,6 +167,7 @@ def median_pool(x, filter_size, strides=[1,1,1,1]):
     medians = tf.contrib.distributions.percentile(patches, 50, axis=3, keep_dims=False)
     return medians
 
+
 def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
                                     initializer=None, regularizer=None,
                                     trainable=True,
@@ -210,8 +211,8 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
         #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
         x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
 
-        if median_filter:
-            x = median_pool(x, 3, [1,1,1,1])
+        #if median_filter:
+        #    x = median_pool(x, 3, [1,1,1,1])
 
     return x, tf.nn.softmax(x)
 
@@ -371,8 +372,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
 
         #set up model
         logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False)
-        prediction_argmax = tf.argmax(prediction, axis=3)
-        prediction_argmax = median_pool(prediction_argmax, 3, strides=[1,1,1,1])
+        #prediction_argmax = median_pool(prediction_argmax, 3, strides=[1,1,1,1])
 
         #set up loss
         loss = None
@@ -424,7 +424,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
-                                                    predictions=prediction_argmax,
+                                                    predictions=tf.argmax(prediction, axis=3),
                                                     num_classes=3,
                                                     weights=None,
                                                     metrics_collections=None,
@@ -563,7 +563,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                                 #construct feed dict
                                 _, tmp_loss, val_model_predictions, val_model_labels, val_model_filenames = sess.run([iou_update_op,
                                                                                                                       (loss if per_rank_output else loss_avg),
-                                                                                                                      prediction_argmax,
+                                                                                                                      prediction,
                                                                                                                       next_elem[1], 
                                                                                                                       next_elem[3]],
                                                                                                                       feed_dict={handle: val_handle})
@@ -572,14 +572,14 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                                 if comm_rank == 0 and not disable_imsave:
                                     if have_imsave:
                                         imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_predictions[0,...]*100)
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',np.argmax(val_model_predictions[0,...],axis=2)*100)
                                         imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',val_model_labels[0,...]*100)
                                         imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
-                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],val_model_predictions[0,...]])
+                                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
                                     else:
                                         np.savez(image_dir+'/test_epoch'+str(epoch)+'_estep'
-                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=val_model_predictions[0,...]*100, 
+                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(val_model_predictions[0,...],axis=2)*100, 
                                                                                                  label=val_model_labels[0,...]*100,
                                                                                                  filename=val_model_filenames[0])
 
