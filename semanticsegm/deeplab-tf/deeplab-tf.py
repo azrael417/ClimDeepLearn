@@ -425,6 +425,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             print("Precision: {}".format("FP32"))
         else:
             print("Precision: {}".format("FP16"))
+        print("Decoder: {}".format(decoder))
         print("Batch normalization: {}".format(batchnorm))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
