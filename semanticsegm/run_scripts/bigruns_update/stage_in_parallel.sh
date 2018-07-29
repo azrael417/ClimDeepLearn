@@ -22,12 +22,7 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=1
 #$3 - train count
 #$4 - validation count
 
-#training
-python ./parallel_stagein.py --target=${2}/train/data --cvt "climate:" --workers 8 --seed 7919 --count ${3} --mkdir ${1}/train/data-*
-cp ${1}/train/stats.h5 ${2}/train/data
-
-#validation
-python ./parallel_stagein.py --target=${2}/validation/data --cvt "climate:" --workers 8 --seed 7919 --count ${4} --mkdir ${1}/validation/data-*
-cp ${1}/validation/stats.h5 ${2}/validation/data
-
-
+#training and validation in one go
+python ./parallel_stagein.py --targets ${2}/train/data ${2}/validation/data --cvt "climate:" --workers 8 --seed 7919 --counts ${3} ${4} --mkdir ${1}/train ${1}/validation
+cp ${1}/stats.h5 ${2}/train/data
+cp ${1}/stats.h5 ${2}/validation/data

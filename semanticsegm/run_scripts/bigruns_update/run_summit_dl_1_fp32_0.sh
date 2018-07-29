@@ -24,7 +24,6 @@ SWORK=/gpfs/alpinetds/world-shared/ven201/seant/climate/test_runs
 run_dir=${SWORK}/test_run_nn${nnodes}_np${nprocs}_j${LSB_JOBID}
 mkdir -p ${run_dir}
 
-cp stage_env.sh ${run_dir}/
 cp stage_in_parallel.sh ${run_dir}/
 cp run_deeplab.sh ${run_dir}/
 cp run_deeplab_fp16.sh ${run_dir}/
@@ -47,17 +46,9 @@ numfiles_validation=$(( ${nprocspn} * ${nperproc_validation} ))
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 
-echo "starting stage_env.sh " `date`
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_env.sh ${datadir} ${scratchdir}
-echo "finished stage_env.sh" `date`
-
-echo "starting stage_in_parallel.sh for training data" `date`
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir}/train ${scratchdir}/train ${numfiles_train}
-echo "finished stage_in_parallel.sh for training data" `date`
-
-echo "starting stage_in_parallel.sh for validation data" `date`
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir}/validation ${scratchdir}/validation ${numfiles_validation}
-echo "finished stage_in_parallel.sh for validation data" `date`
+echo "starting stage_in_parallel.sh" `date`
+jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}
+echo "finished stage_in_parallel.sh" `date`
 
 # Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD
 export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/pyvenv_summit_7.5.18/lib/directconv.so"
