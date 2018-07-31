@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from datetime import datetime
+import socket
+import os
+print("start python: {}, {}, {}".format(socket.gethostname(), os.environ.get('PMIX_RANK'), datetime.now()))
 
 # suppress warnings from earlier versions of h5py
 import warnings
@@ -6,7 +10,6 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import argparse
 import multiprocessing
-import os
 import sys
 import glob
 import random
@@ -116,10 +119,12 @@ def main():
 
     # do mpi stuff inside of main so that subprocesses don't get confused
     try:
-        import mpi4py
-        mpi4py.rc.recv_mprobe = False
+        from mpi4py import rc
+        rc.recv_mprobe = False
 
+        print("import MPI: {}, {}, {}".format(socket.gethostname(), os.environ.get('PMIX_RANK'), datetime.now()))
         from mpi4py import MPI
+        print("post MPI: {}, {}, {}".format(socket.gethostname(), os.environ.get('PMIX_RANK'), datetime.now()))
         have_mpi = True
         comm_rank = MPI.COMM_WORLD.Get_rank()
         comm_size = MPI.COMM_WORLD.Get_size()
