@@ -140,7 +140,7 @@ def main():
     ziplist = zip(args.srcpaths, args.targets, args.counts)
 
     if comm_rank == 0:
-        print("staging in total {dircount} directories".format(dircount=len(ziplist)))
+        print("Staging in total {dircount} directories".format(dircount=len(ziplist)))
 
     for stageid,dirtup in enumerate(ziplist):
 
@@ -154,7 +154,7 @@ def main():
         if comm_rank == 0:
             t_scan_start = time.time()
 
-            print("staging {cnt} files in {src} to {dst}".format(cnt=count, src=source, dst=target))
+            print("Staging {cnt} files in {src} to {dst}".format(cnt=count, src=source, dst=target))
 
             files = []
             if os.path.isdir(source):

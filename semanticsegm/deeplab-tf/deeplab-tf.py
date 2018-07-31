@@ -410,8 +410,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data = load_data(input_path_train, True, trn_sz)
-    val_data = load_data(input_path_validation, False, val_sz)
+    trn_data = load_data(input_path_train, True, trn_sz, horovod)
+    val_data = load_data(input_path_validation, False, val_sz, horovod)
     if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
         print("Shape of val_data is {}".format(val_data.shape[0]))
@@ -544,8 +544,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                         batch=batch,
                                         sess_config=sess_config)
 
-        if horovod:
-            flops *= hvd.size()
+        flops *= comm_size
         if comm_rank == 0:
             print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
 
@@ -563,10 +562,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             if comm_rank==0:
                 print("Enabling LARC")
             train_op, lr = get_larc_optimizer(optimizer, loss, global_step,
-                                              num_steps_per_epoch)
+                                              num_steps_per_epoch, horovod)
         else:
             train_op, lr = get_optimizer(optimizer, loss, global_step,
-                                         num_steps_per_epoch)
+                                         num_steps_per_epoch, horovod)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -591,7 +590,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
         #bcast init for bcasting the model after start
-        init_bcast = hvd.broadcast_global_variables(0)
+        if horovod:
+            init_bcast = hvd.broadcast_global_variables(0)
         #initializers:
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
@@ -645,7 +645,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             if comm_rank == 0 and not disable_checkpoints:
                 load_model(sess, checkpoint_saver, checkpoint_dir)
             #broadcast loaded model variables
-            sess.run(init_bcast)
+            if horovod:
+                sess.run(init_bcast)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -805,6 +806,7 @@ if __name__ == '__main__':
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
+    AP.add_argument("--disable_horovod",action='store_true',help="Flag to disable horovod")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
@@ -818,6 +820,10 @@ if __name__ == '__main__':
 
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
+
+    #check if we want horovod to be disabled
+    if parsed.disable_horovod:
+        horovod = False
 
     #invoke main function
     main(input_path_train=parsed.datadir_train,

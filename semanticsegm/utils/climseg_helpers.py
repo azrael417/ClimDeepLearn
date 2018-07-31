@@ -10,11 +10,10 @@ import multiprocessing
 import signal
 
 #horovod, yes or no?
-horovod=True
 try:
     import horovod.tensorflow as hvd
 except:
-    horovod = False
+    print("Warning, horovod not installed")
 
 #focal loss routine
 def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
@@ -132,7 +131,7 @@ def get_learning_rate(optimizer, global_step, steps_per_epoch):
     return learning_rate
 
 #optimizer
-def get_optimizer(optimizer, loss, global_step, steps_per_epoch):
+def get_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
     #get learning rate
     learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
 
@@ -156,7 +155,7 @@ def get_optimizer(optimizer, loss, global_step, steps_per_epoch):
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
     
     #horovod wrapper
-    if horovod:
+    if use_horovod:
         optim = hvd.DistributedOptimizer(optim)
 
     #return minimizer
@@ -164,7 +163,7 @@ def get_optimizer(optimizer, loss, global_step, steps_per_epoch):
     
 
 #larc optimizer:
-def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch):
+def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
     #get learning rate
     learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
 
@@ -206,7 +205,7 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch):
                 g_next = g
                 g = g_lag
                                     
-            if horovod and (hvd.size() > 1):
+            if use_horovod and (hvd.size() > 1):
                 # if we ask for an average, it does a scalar divide, but
                 #  we can bake that into the scaling below
                 g = hvd.allreduce(g, average=False)
@@ -407,7 +406,7 @@ class h5_input_reader(object):
 
 
 #load data routine
-def load_data(input_path, shuffle=True, max_files=-1):
+def load_data(input_path, shuffle=True, max_files=-1, use_horovod=True):
     #look for labels and data files
     files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
 
@@ -424,7 +423,10 @@ def load_data(input_path, shuffle=True, max_files=-1):
         shufflefile = "./shuffle_indices.npy"
         if not os.path.isfile(shufflefile):
             shuffle_indices = np.random.permutation(len(files))
-            if hvd.rank() == 0:
+            if use_horovod:
+                if hvd.rank() == 0:
+                    np.save(shufflefile,shuffle_indices)
+            else:
                 np.save(shufflefile,shuffle_indices)
         else:
             try:

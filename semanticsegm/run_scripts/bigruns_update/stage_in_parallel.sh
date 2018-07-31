@@ -1,6 +1,12 @@
 #!/bin/bash
 
-#create directory if not exists
+#see if nvme is there
+echo $(hostname) $(df -h ${2} | tail -n1)
+
+#create directory if not exists and clean up otherwise
+if [ -d "${2}" ]; then
+    rm -rf ${2}/*
+fi
 if [ ! -d "${2}" ]; then
     mkdir -p ${2}
 fi

@@ -16,6 +16,10 @@ APP="python ./tiramisu-tf.py --datadir_train ${1}/train/data --datadir_validatio
 
 export PAMI_ENABLE_STRIPING=0
 
+#DEBUG
+#export CUDA_VISIBLE_DEVICES=${lrank}
+#DEBUG
+
 case ${lrank} in
 [0])
 export PAMI_IBV_DEVICE_NAME=mlx5_0:1
