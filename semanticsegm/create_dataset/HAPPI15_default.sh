@@ -28,5 +28,5 @@ files_regex='.*2106.*\.nc$'
 
 srun -n 2920 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \
-    --candidate_file /global/cscratch1/sd/amahesh/teca_HAPPI15_run1_default/candidates.bin \
-    --track_file /global/cscratch1/sd/amahesh/teca_HAPPI15_run1_default/tracks.bin \
+    --candidate_file /global/project/projectdirs/dasrepo/teca/teca_HAPPI15_run1_default/candidates.bin \
+    --track_file /global/project/projectdirs/dasrepo/teca/teca_HAPPI15_run1_default/tracks.bin \
