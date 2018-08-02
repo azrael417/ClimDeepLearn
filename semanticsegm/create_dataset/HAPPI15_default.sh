@@ -2,11 +2,11 @@
 
 #SBATCH -A dasrepo
 #SBATCH --job-name=def
-#SBATCH --time=1:30:00
+#SBATCH --time=1:40:00
 #SBATCH --nodes=44
 #SBATCH --exclusive
-#SBATCH --output=teca_HAPPI15_default.sh
-#SBATCH --error=teca_HAPPI15_default.sh
+#SBATCH --output=teca_HAPPI15_default.out
+#SBATCH --error=teca_HAPPI15_default.err
 ##SBATCH -p debug 
 #SBATCH -C knl,quad,cache
 #SBATCH --mail-user=amahesh@lbl.gov
@@ -28,5 +28,5 @@ files_regex='.*2106.*\.nc$'
 
 srun -n 2920 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \
-    --candidate_file /global/project/projectdirs/dasrepo/teca/teca_HAPPI15_run1_default/candidates.bin \
-    --track_file /global/project/projectdirs/dasrepo/teca/teca_HAPPI15_run1_default/tracks.bin \
+    --candidate_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_default/candidates.bin \
+    --track_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_default/tracks.bin \

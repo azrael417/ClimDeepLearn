@@ -2,14 +2,14 @@
 
 #SBATCH -A dasrepo
 #SBATCH --job-name=med
-#SBATCH --time=1:30:00
+#SBATCH --time=1:40:00
 #SBATCH --nodes=44
 #SBATCH --exclusive
 #SBATCH --output=teca_HAPPI15_medium.out
 #SBATCH --error=teca_HAPPI15_medium.err
 ##SBATCH -p debug 
 #SBATCH -C knl,quad,cache
-#SBATCH --mail-user=amahesh@lbl.gov
+#SBATCH --mail-user=mudigonda@lbl.gov
 #SBATCH --qos premium
 
 module unload nco/4.6.0
@@ -28,8 +28,8 @@ files_regex='.*2106.*\.nc$'
 
 srun -n 2920 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \
-    --candidate_file /global/cscratch1/sd/amahesh/teca_HAPPI15_run1_medium/candidates.bin \
-    --track_file /global/cscratch1/sd/amahesh/teca_HAPPI15_run1_medium/tracks.bin 
+    --candidate_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_medium/candidates.bin \
+    --track_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_medium/tracks.bin \ 
     --candidates::min_vorticity_850mb 1.5e-4 \
     --candidates::max_core_temperature_delta 0.7 \
     --candidates::max_pressure_delta 350.0\
