@@ -22,6 +22,10 @@ source ${2}/${VENV}/bin/activate
 #some MPI pars
 export OMPI_MCA_osc_pami_allow_thread_multiple=1
 
+#disable adaptive routing
+export PAMI_IBV_ENABLE_OOO_AR=0
+export PAMI_IBV_QP_SERVICE_LEVEL=0
+
 #arguments: 
 #$1 - source dir
 #$2 - destination dir

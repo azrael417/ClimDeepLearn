@@ -2,6 +2,10 @@
 # Disable multiple threads
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
+#disable adaptive routing
+export PAMI_IBV_ENABLE_OOO_AR=0
+export PAMI_IBV_QP_SERVICE_LEVEL=0
+
 # Reduce horovod sleep time, enable priority NCCL stream
 export HOROVOD_SLEEP_INTERVAL=2
 export HOROVOD_USE_PRIORITY=0
