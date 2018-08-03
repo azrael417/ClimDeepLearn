@@ -277,7 +277,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
         
     #parameters
     per_rank_output = False
-    loss_print_interval = 10
+    loss_print_interval = 1
     
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #1
