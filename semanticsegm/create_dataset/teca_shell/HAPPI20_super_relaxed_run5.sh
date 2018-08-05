@@ -1,12 +1,12 @@
 #!/bin/bash -l
 
 #SBATCH -A dasrepo
-#SBATCH --job-name=teca_HAPPI_15_super_relaxed_run5
+#SBATCH --job-name=teca_HAPPI_20_super_relaxed_run5
 #SBATCH --time=04:30:00
-#SBATCH --nodes=108
+#SBATCH --nodes=54
 #SBATCH --exclusive
-#SBATCH --output=teca_HAPPI_15_super_relaxed_run5.out
-#SBATCH --error=teca_HAPPI_15_super_relaxed_run5.err
+#SBATCH --output=teca_HAPPI_20_super_relaxed_run5.out
+#SBATCH --error=teca_HAPPI_20_super_relaxed_run5.err
 ##SBATCH -p debug 
 #SBATCH -C knl,quad,cache
 #SBATCH --mail-user=amahesh@lbl.gov
@@ -26,7 +26,7 @@ pwd
 files_regex='.*\.nc$'
 
 
-srun -n 7300 --cpu_bind=cores --mem_bind=local teca_tc_detect \
+srun -n 3650 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \
     --candidate_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run5_super_relaxed/candidates.bin \
     --track_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run5_super_relaxed/tracks.bin \
