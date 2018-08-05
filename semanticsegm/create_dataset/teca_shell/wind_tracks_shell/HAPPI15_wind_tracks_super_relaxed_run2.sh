@@ -3,10 +3,11 @@
 #SBATCH --job-name=teca_HAPPI_15_wind_track_super_relaxed_2
 #SBATCH --output=teca_HAPPI_15_wind_tracks_super_relaxed_run2.out
 #SBATCH --error=teca_HAPPI_15_wind_tracks_super_relaxed_run2.err
-#SBATCH -p debug
+##SBATCH -p debug
 #SBATCH -N 4
-#SBATCH -t 00:30:00
+#SBATCH -t 01:30:00
 #SBATCH -C haswell
+#SBATCH -q premium
 
 module unload python/2.7-anaconda-4.4
 module load teca
