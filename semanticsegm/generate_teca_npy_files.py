@@ -4,7 +4,6 @@ import pickle
 from glob import glob
 import csv
 import argparse
-#import pandas as pd
 
 # filenames = ['/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run1/TECA2/wind_tracks_fvCAM5_HAPPI20_run1.bin',
 #              '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run3/TECA2/wind_tracks_fvCAM5_HAPPI20_run3.bin',
@@ -16,19 +15,21 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dataset', type=str, help='select from the following: HAPPI20, HAPPI15, All-Hist')
 	parser.add_argument('--output_dir', type=str, help='where to output the numpy files')
+	parser.add_argument('--label_version', type=str, help='label_0, label_1, or label_2')
 	cli_args = parser.parse_args()
 
-	if cli_args.dataset == 'All-Hist':
-		teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/All-Hist/CAM5-1-0.25degree_All-Hist_est1_v3_run*/TECA2/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run*.bin'
-	elif cli_args.dataset == 'HAPPI20':
-		teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run[12346]/TECA2/wind_tracks_fvCAM5_HAPPI20_run[123466].bin'
-	elif cli_args.dataset == 'HAPPI15':
-		teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run[12346]/TECA2/wind_tracks_fvCAM5_HAPPI15_run[12346].bin'
-
+	if cli_args.label_version == 'label_0':
+		if cli_args.dataset == 'All-Hist':
+			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/All-Hist/CAM5-1-0.25degree_All-Hist_est1_v3_run*/TECA2/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run*.bin'
+		elif cli_args.dataset == 'HAPPI20':
+			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run[12346]/TECA2/wind_tracks_fvCAM5_HAPPI20_run[123466].bin'
+		elif cli_args.dataset == 'HAPPI15':
+			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run*/TECA2/wind_tracks_fvCAM5_HAPPI15_run*.bin'
+	elif cli_args.label_version == 'label_1':
+		teca_regex = "/global/project/projectdirs/dasrepo/gb2018/teca/teca_{}_run*_super_relaxed/wind_tracks.bin".format(cli_args.dataset)
 
 filenames = glob(teca_regex)
-
-
+print("Number of files found: {}".format(len(filenames)))
 #filename = '/global/cscratch1/sd/karthik_/TECA2.0Demo/demo_tracks/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './candidates_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './tables_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
@@ -60,9 +61,9 @@ for filename in filenames:
 	# print some info
 	print 'In tables file: %s'%(filename)
 	print 'Found Columns:'
-	for i in xrange(table.get_number_of_columns()):
-	  print '%i - %s'%(i, table.get_column_name(i))
-	print 'Number of rows: %d'%(table.get_number_of_rows())
+	# for i in xrange(table.get_number_of_columns()):
+	#   print '%i - %s'%(i, table.get_column_name(i))
+	# print 'Number of rows: %d'%(table.get_number_of_rows())
 
 	track_id.extend(list(table.get_column('track_id').as_array()))
 	lon.extend(list(table.get_column('lon').as_array()))
@@ -75,8 +76,12 @@ for filename in filenames:
 	day.extend(list(table.get_column('day').as_array()))
 	hour.extend(list(table.get_column('hour').as_array()))
 	storm_id.extend(list(table.get_column('storm_id').as_array()))
-	run_nums.extend([int(filename[-5:-4])] * table.get_number_of_rows())
-	print(len(track_id))
+	if cli_args.dataset == 'label_0':
+		run_nums.extend([int(filename[-5:-4])] * table.get_number_of_rows())
+	else:
+		index_of_run = filename.find('run')
+		run_nums.extend([int(filename[index_of_run+3])] * table.get_number_of_rows())
+	# print(len(track_id))
 	#print(lon.size)
 	#print(lat.size)
 	#print(r0.size)
@@ -86,14 +91,9 @@ for filename in filenames:
 	#print(month.size)
 	#print(day.size)
 	#print(hour.size)
-	print(len(storm_id))
+	# print(len(storm_id))
 
-	print(np.mean(table.get_column('wind_radius_0').as_array()))
-	print(np.mean(table.get_column('wind_radius_1').as_array()))
-	print(np.mean(table.get_column('wind_radius_2').as_array()))
-	print(np.mean(table.get_column('wind_radius_3').as_array()))
-	print(np.mean(table.get_column('wind_radius_4').as_array()))
-	print(np.mean(table.get_column('wind_radius_5').as_array()))
+	print("num_rows: {}, run_num: {}".format(table.get_number_of_rows(), filename[index_of_run+3]))
 
 save_filepath = cli_args.output_dir
 
