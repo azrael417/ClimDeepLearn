@@ -98,7 +98,7 @@ def get_AR_semantic_mask(U850, V850, QREFHT, TMQ, time_step, semantic_mask, ar_t
   ivt_blobs = get_AR_blobs_TMQ(TMQ, time_step, ar_threshold_value)
   ar_detected_bool = False
 
-  print("Candidate ARs: {}".format(len(ivt_blobs)))
+  # print("Candidate ARs: {}".format(len(ivt_blobs)))
   num_chosen_ARs = 0
   num_diagonal_thresh_ARs = 0
   num_length_thresh_ARs = 0
@@ -118,9 +118,9 @@ def get_AR_semantic_mask(U850, V850, QREFHT, TMQ, time_step, semantic_mask, ar_t
           semantic_mask[blob] = 2
           ar_detected_bool = True
           num_chosen_ARs+= 1
-  print("Candidate ARs after diagonal threshold: {}".format(num_diagonal_thresh_ARs))
-  print("Candidate ARs after diagonal and length threshold: {}".format(num_length_thresh_ARs))
-  print("Selected ARs after length, width, and diagonal threshold: {}".format(num_chosen_ARs))
+  # print("Candidate ARs after diagonal threshold: {}".format(num_diagonal_thresh_ARs))
+  # print("Candidate ARs after diagonal and length threshold: {}".format(num_length_thresh_ARs))
+  # print("Selected ARs after length, width, and diagonal threshold: {}".format(num_chosen_ARs))
   #ivt_blob_random_array = np.ma.masked_less_equal(ivt_blob_random_array,0)
   return semantic_mask, ar_detected_bool
 
@@ -287,7 +287,7 @@ def extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT
   save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined),background_class, tc_class, ar_class])
   save_labels_stats = save_labels_stats.reshape((7,1))
 
-  return save_labels, save_labels_stats
+  return save_labels, save_labels_stats, background_class < 0.9
 
 
 progress_counter = 0
@@ -314,8 +314,8 @@ for ii,table_name in enumerate(sample_teca_subtables):
   day = int(table_name[20:22])
   run_num = int(table_name[-5:-4])
 
-  if ii % 30 == 0:
-    print("Current year: {}; Current month: {}; Current run number: {}".format(year, month, run_num))
+  # if ii % 30 == 0:
+    # print("Current year: {}; Current month: {}; Current run number: {}".format(year, month, run_num))
   
   if cli_args.dataset == 'HAPPI15':
     path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run" +str(run_num) + "/h2/fvCAM5_HAPPI15_run" + str(run_num) + ".cam.h2."
@@ -349,7 +349,7 @@ for ii,table_name in enumerate(sample_teca_subtables):
         UBOT = fin.variables['UBOT'][:][time_step_index]
         VBOT = fin.variables['VBOT'][:][time_step_index]
 
-      print("read in variables")
+      # print("read in variables")
     except:
       print("Could not load in {} Dataset Year: {} Month: {} Day: {} Run_Num: {}".format(cli_args.dataset, year, month, day, run_num))
       continue
@@ -364,13 +364,18 @@ for ii,table_name in enumerate(sample_teca_subtables):
     for channel_index, channel in enumerate(channel_list):
       save_data_stats[:,channel_index] = np.asarray([np.mean(channel), np.max(channel), np.min(channel),np.std(channel)])
     
-    save_label_0, save_label_0_stats = extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT, TMQ, "/global/cscratch1/sd/amahesh/gb_helper/{}/label_0/subtables/".format(cli_args.dataset), table_name, 24)
-    save_label_1, save_label_1_stats = extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT, TMQ, "/global/cscratch1/sd/amahesh/gb_helper/{}/label_1/subtables/".format(cli_args.dataset), table_name, 21)
+    save_label_0, save_label_0_stats, label_0_anomaly_bool = extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT, TMQ, "/global/cscratch1/sd/amahesh/gb_helper/{}/label_0/subtables/".format(cli_args.dataset), table_name, 24)
+    save_label_1, save_label_1_stats, label_1_anomaly_bool = extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT, TMQ, "/global/cscratch1/sd/amahesh/gb_helper/{}/label_1/subtables/".format(cli_args.dataset), table_name, 21)
     # save_label_2, save_label_2_stats = extract_label_mask(year, month, time_step_index, run_num, U850, V850, QREFHT, TMQ, path_to_subtables, table_name, 18)
+
+    if label_0_anomaly_bool or label_1_anomaly_bool:
+      anomaly_str = "-ANOMALY"
+    else:
+      anomaly_str = ""
 
     #try:
     #f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
-    f = h5py.File("{}data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(cli_args.label_output_dir, year,month,day, time_step_index, run_num),"w")
+    f = h5py.File("{}data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}{}.h5".format(cli_args.label_output_dir, year,month,day, time_step_index, run_num, anomaly_str),"w")
     grp = f.create_group("climate")
     grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
     grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
@@ -385,7 +390,7 @@ for ii,table_name in enumerate(sample_teca_subtables):
     f.close()  
     
     print("saved file: Year: {}: Month: {} Day: {} Time_Step_Index: {} run_num {}".format(year, month, day, time_step_index, run_num))
-    if ii % 3000 == 0 or year==1996 or year==2014:
+    if ii % 100 == 0 or year==2106 or year ==2110 or year==2115:
       plot_mask(lons, lats, save_data[:,:,0], save_label_0,
            year, month, day, time_step_index, run_num, print_field="label_0")
       plot_mask(lons, lats, save_data[:,:,0], save_label_1,

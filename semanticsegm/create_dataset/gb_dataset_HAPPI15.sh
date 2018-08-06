@@ -2,7 +2,7 @@
 
 #SBATCH -A dasrepo
 #SBATCH --job-name=gb_HAPPI15
-#SBATCH --time=01:45:00
+#SBATCH --time=01:30:00
 #SBATCH --nodes=64
 #SBATCH --exclusive
 #SBATCH --output=gb_HAPPI15.out
@@ -20,6 +20,6 @@ cd /global/homes/a/amahesh/ClimDeepLearn/semanticsegm/create_dataset
 pwd
 
 
-srun -n 4352 --cpu_bind=cores python create_multichannel_multithreshold_labels.py --dataset HAPPI15 \
+srun -n 4352 -c 4 --cpu_bind=cores python create_multichannel_multithreshold_labels.py --dataset HAPPI15 \
 	--label_output_dir /global/cscratch1/sd/amahesh/gb_data/HAPPI15/ \
-	--vis_output_dir /global/cscratch1/sd/amahesh/gb_helper/HAPPI15/image_dump/
+	--vis_output_dir /global/cscratch1/sd/amahesh/gb_helper/HAPPI15/image_dump/ --parallel

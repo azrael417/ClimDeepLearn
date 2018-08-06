@@ -1,4 +1,3 @@
-print('start')
 import matplotlib as mpl
 mpl.use('agg')
 import matplotlib.pyplot as plt
@@ -6,7 +5,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
 import numpy as np
 import argparse
-from skimage.filters import threshold_otsu
+# from skimage.filters import threshold_otsu
 import netCDF4 as nc
 from os import listdir
 from os.path import isfile, join
@@ -18,24 +17,7 @@ import os
 import floodfillsearch.floodFillSearch as flood
 from scipy.misc import imsave
 import h5py
-
-from mpi4py import MPI
-
-
-
-
-#print("finished importing")
-
-#UNCOMMENT THE FOLLOWING 2 LINES IF YOU WANT TO RUN IN PARALLEL
-try:
-  rank = MPI.COMM_WORLD.Get_rank()
-  size = MPI.COMM_WORLD.Get_size()
-except:
-  rank = 1
-  size = 1
-
-print("SIZE: " + str(size))
-print("RANK: " + str(rank))
+import argparse
 
 image_height = 768
 image_width = 1152
@@ -46,6 +28,8 @@ if __name__ == "__main__":
   parser.add_argument('--dataset', type=str, help='select from the following: HAPPI20, HAPPI15, All-Hist')
   parser.add_argument('--vis_output_dir', type=str, help='directory to output visualizations of the label files')
   parser.add_argument('--parallel', action='store_true', help='whether or not to create the dataset in parallel')
+  parser.add_argument('--ar_threshold', type=str, help='IVT or TMQ.  (the field on which to threshold for ARs)', default='IVT')
+  parser.add_argument('--no_width', action='store_true', help="Ignore the width threshold for an AR")
   cli_args = parser.parse_args()
 
 if cli_args.parallel:
@@ -64,6 +48,18 @@ if cli_args.parallel:
 
 #"blobs" are candidate ARs
 
+def calculate_area_grid_cells():
+  """
+  Calculate the area of each grid cell in the lat/ lon grid
+  """
+  dlat = np.diff(np.radians(lats))
+  dlon = np.diff(np.radians(lons))
+  dlat = np.append(dlat, dlat[0])
+  dlon = np.append(dlon, dlon[0])
+  dlon, dlat = np.meshgrid(dlon, dlat)
+  return np.abs(6170**2 * (np.cos(np.radians(lats)) * (dlat * dlon).T).T)
+
+
 
 def calculate_blob_length_and_width(blob):
   """Returns the length and width of the blob as a tuple"""
@@ -75,7 +71,7 @@ def calculate_blob_length_and_width(blob):
 
   length = max(geopy.distance.great_circle((max_lat, max_lon),(min_lat, max_lon)).km, geopy.distance.great_circle((max_lat, min_lon),(min_lat, min_lon)).km) * 1.0
   width = max(geopy.distance.great_circle((max_lat, max_lon),(max_lat, min_lon)).km, geopy.distance.great_circle((min_lat, max_lon),(min_lat, min_lon)).km) * 1.0
-  diagonal = geopy.distance.great_circle((max_lat, max_lon),(min_lat, min_lon)) .km
+  diagonal = geopy.distance.great_circle((max_lat, max_lon),(min_lat, min_lon)).km
   return length, width, diagonal
   # return max(geopy.distance.great_circle((max_lat, max_lon),(min_lat, min_lon)).km, geopy.distance.great_circle((max_lat, max_lon),(min_lat, min_lon)).km)
 
@@ -89,7 +85,7 @@ def get_AR_blobs(U850, V850, QREFHT, time_step):
   IVT = np.sqrt(IVT_u**2 + IVT_v**2)
 
   #Calculate IVT anomalies
-  IVT_time_percentile = 92
+  IVT_time_percentile = 94
   IVT_threshold = np.percentile(IVT,IVT_time_percentile,axis=(1,2))[:,np.newaxis,np.newaxis]
 
   # damp anomalies to 0 near the tropics
@@ -103,22 +99,63 @@ def get_AR_blobs(U850, V850, QREFHT, time_step):
   ivt_blobs = flood.floodFillSearch(IVT_anomaly[0])
   return ivt_blobs
 
+def get_AR_blobs_TMQ(TMQ, time_step):
+  #with nc.Dataset(filepath) as fin:
+  # TMQ_time_percentile = 72
+  # TMQ_threshold = np.percentile(TMQ,TMQ_time_percentile,axis=(1,2))[:,np.newaxis,np.newaxis]
+  TMQ_threshold = 24
+  # from scipy import stats
+  # print(stats.percentileofscore(TMQ.flatten(), TMQ_threshold))
 
-def get_AR_semantic_mask(U850, V850, QREFHT, time_step, semantic_mask):
-  ivt_blobs = get_AR_blobs(U850, V850, QREFHT, time_step)
+  # damp anomalies to 0 near the tropics
+  lon2d,lat2d = np.meshgrid(lons,lats)
+  sigma_lat = 19 # degrees
+  gaussian_band = 1 - np.exp(-lat2d**2/(2*sigma_lat**2))
+
+  # calculate IVT anomalies
+  TMQ_anomaly = TMQ*gaussian_band[np.newaxis,...] - TMQ_threshold
+
+  ivt_blobs = flood.floodFillSearch(TMQ_anomaly[0])
+  return ivt_blobs
+
+
+def get_AR_semantic_mask(U850, V850, QREFHT, TMQ, time_step, semantic_mask, mode='IVT'):
+  if mode == 'IVT':
+    ivt_blobs = get_AR_blobs(U850, V850, QREFHT, time_step)
+  else:
+    ivt_blobs = get_AR_blobs_TMQ(TMQ, time_step)
   ar_detected_bool = False
+
+  print("Candidate ARs: {}".format(len(ivt_blobs)))
+  num_chosen_ARs = 0
+  num_diagonal_thresh_ARs = 0
+  num_length_thresh_ARs = 0
+
   for blob in ivt_blobs:
       #if calculate_blob_length(blob) > 1500:
       length, width, diagonal = calculate_blob_length_and_width(blob)
       if length > 0 and width > 0:
-        min_size_bool = diagonal > 1500 
-        ratio_bool = length / width > 1.2 or length / width < 0.4 or True
-        if min_size_bool and ratio_bool:
+        min_size_bool = diagonal > 1500
+        if min_size_bool: num_diagonal_thresh_ARs+=1
+
+        length_bool = diagonal > 1500
+        if length_bool and min_size_bool: num_length_thresh_ARs+=1
+
+        width_bool = True
+        if not cli_args.no_width:
+          width_bool = np.sum(calculate_area_grid_cells()[blob]) / length < 1000
+        # ratio_bool = length / width > 1.2 or length / width < 0.5
+        if min_size_bool and length_bool and width_bool:
           semantic_mask[blob] = 2
           ar_detected_bool = True
-      
+          num_chosen_ARs+= 1
+  print("Candidate ARs after diagonal threshold: {}".format(num_diagonal_thresh_ARs))
+  print("Candidate ARs after diagonal and length threshold: {}".format(num_length_thresh_ARs))
+  print("Selected ARs after length, width, and diagonal threshold: {}".format(num_chosen_ARs))
   #ivt_blob_random_array = np.ma.masked_less_equal(ivt_blob_random_array,0)
   return semantic_mask, ar_detected_bool
+
+
 
 #get the number of AR instances, and append lat/lon bounding box coordinatoes to "instance_boxes"
 def get_num_AR_instances(U850, V850, QREFHT, time_step, instance_masks, instance_boxes, num_instances, lats, lons): 
@@ -159,7 +196,7 @@ def binarize(img_array, mask, lat_end, lat_start, lon_end, lon_start):
     intersect = True
   
   #Find the Otsu threshold of the image slice
-  otsu_thresh = threshold_otsu(im_slice)
+  # otsu_thresh = threshold_otsu(im_slice)
   #binary_adaptive = im_slice > otsu_thresh
   binary_adaptive = im_slice > np.percentile(im_slice, 93)
   #binary_adaptive = im_slice > np.percentile(im_slice, 89)
@@ -196,7 +233,7 @@ def find_nearest(array,value):
     return idx
 
 def plot_mask(lons, lats, img_array, storm_mask,
-              year, month, day, time_step_index, run_num):
+              year, month, day, time_step_index, run_num, print_field=""):
   my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=np.median(lons),
                   llcrnrlon=min(lons), urcrnrlat=max(lats), urcrnrlon=max(lons), resolution = 'c')
  
@@ -210,12 +247,12 @@ def plot_mask(lons, lats, img_array, storm_mask,
   my_map.contourf(x_map,y_map,storm_mask, alpha=0.42,cmap='gray')
   my_map.drawmeridians(np.arange(-180, 180, 60), labels=[0,0,0,1])
   my_map.drawparallels(np.arange(-90, 90, 30), labels =[1,0,0,0])
-  plt.title("TMQ with Segmented TECA Storms")
+  plt.title("{:04d}-{:02d}-{:02d}-{:02d} Labels".format(year,month,day,time_step_index))
   cbar.ax.set_ylabel('TMQ kg $m^{-2}$')
 
   mask_ex = plt.gcf()
   #mask_ex.savefig("/global/cscratch1/sd/amahesh/segm_plots/combined_mask+{:04d}-{:02d}-{:02d}-{:02d}-{:02d}.png".format(year,month,day,time_step_index, run_num))
-  mask_ex.savefig("{}combined_mask+{:04d}-{:02d}-{:02d}-{:02d}-{:02d}.png".format(cli_args.vis_output_dir, year,month,day,time_step_index, run_num))
+  mask_ex.savefig("{}combined_mask+{:04d}-{:02d}-{:02d}-{:02d}-{:02d}-{}.png".format(cli_args.vis_output_dir, year,month,day,time_step_index, run_num, print_field))
   plt.clf()
 
 #print("before loading teca_subtables")
@@ -228,11 +265,12 @@ elif cli_args.dataset== 'HAPPI20':
   path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables_HAPPI20/*.csv"
 elif cli_args.dataset == 'All-Hist':
   # path_to_subtables = "/global/cscratch1/sd/amahesh/segmentation_labels/teca_subtables_All-Hist/*.csv"
-  path_to_subtables = '/global/cscratch1/sd/amahesh/gb_helper/All-Hist/subtables/*.csv'
-teca_subtables = np.asarray([os.path.basename(x) for x in glob.glob(path_to_subtables)])
-# shuffle_indices = np.random.permutation(len(teca_subtables)) 
+  path_to_subtables = '/global/cscratch1/sd/amahesh/gb_helper/All-Hist/label_0/subtables/*1996*-1.csv'
+teca_subtables = np.sort(np.asarray([os.path.basename(x) for x in glob.glob(path_to_subtables)]))
+np.random.seed(0)
+shuffle_indices = np.random.permutation(len(teca_subtables)) 
 # np.save("./shuffle_indices_glob_files.npy", shuffle_indices)
-# teca_subtables = teca_subtables[shuffle_indices]
+teca_subtables = teca_subtables[shuffle_indices]
 #print("loaded in teca_subtables")
 
 #path_to_labels = "/global/cscratch1/sd/mayur/segm_labels/"
@@ -242,8 +280,6 @@ teca_subtables = np.asarray([os.path.basename(x) for x in glob.glob(path_to_subt
 progress_counter = 0
 
 for ii,table_name in enumerate(teca_subtables):
-  #print("I index: " + str(ii))
-  #UNCOMMENT THE FOLLOWING LINE IF YOU WANT TO RUN IN PARALLEL
   if cli_args.parallel:
     if ii % size != rank: continue
   #print(str(rank))
@@ -252,18 +288,22 @@ for ii,table_name in enumerate(teca_subtables):
   month = int(table_name[17:19])
   day = int(table_name[20:22])
   run_num = int(table_name[-5:-4])
+
+  if ii % 30 == 0:
+    print("Current year: {}; Current month: {}; Current run number: {}".format(year, month, run_num))
   
   if cli_args.dataset == 'HAPPI15':
     path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run" +str(run_num) + "/h2/fvCAM5_HAPPI15_run" + str(run_num) + ".cam.h2."
   elif cli_args.dataset == 'HAPPI20':
     path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run" +str(run_num) + "/h2/fvCAM5_HAPPI20_run" + str(run_num) + ".cam.h2."
   elif cli_args.dataset == 'All-Hist':
-    path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/All-Hist/CAM5-1-0.25degree_All-Hist_est1_v3_run" + str(run_num) + "h2/" + "CAM5-1-0.25degree_All-Hist_est1_v3_run" + str(run_num) + ".cam.h2."
+    path_to_CAM5_files = "/global/cscratch1/sd/mwehner/machine_learning_climate_data/All-Hist/CAM5-1-0.25degree_All-Hist_est1_v3_run" + str(run_num) + "/h2/" + "CAM5-1-0.25degree_All-Hist_est1_v3_run" + str(run_num) + ".cam.h2."
 
 
   id_string = "{:04d}{:02d}{:02d}".format(year,month,day)
 
-  curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
+  # curr_table = pd.read_csv(path_to_subtables[:-5]+table_name)
+  curr_table = pd.read_csv("{}/{}".format(os.path.dirname(path_to_subtables), table_name))
 
   #Add 4 to the tropical cyclone radii (so that the radii aren't too small)
   #curr_table['r0'] = curr_table['r0'][:] + 4
@@ -272,31 +312,36 @@ for ii,table_name in enumerate(teca_subtables):
   #time_step_index refers to the 8 snapshots of data available for each data.
   for time_step_index in range(8):
     #Read in the TMQ data for the corresponding year, month, day, and time_step 
-    with nc.Dataset(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day)) as fin:
-      #Extract the fields of interest
-      TMQ = fin['TMQ'][:][time_step_index]
-      lats = fin['lat'][:]
-      lons = fin['lon'][:]
-      U850 = fin.variables['U850'][:][time_step_index]
-      V850 = fin.variables['V850'][:][time_step_index]
-      QREFHT = fin.variables['QREFHT'][:][time_step_index]
-      PS = fin.variables['PS'][:][time_step_index]
-      PSL = fin.variables['PSL'][:][time_step_index]
-      T200 = fin.variables['T200'][:][time_step_index]
-      T500 = fin.variables['T500'][:][time_step_index]
-      PRECT = fin.variables['PRECT'][:][time_step_index]
-      TS = fin.variables['TS'][:][time_step_index]
-      TREFHT = fin.variables['TREFHT'][:][time_step_index]
-      Z1000 = fin.variables['Z1000'][:][time_step_index]
-      Z200 = fin.variables['Z200'][:][time_step_index]
-      ZBOT = fin.variables['ZBOT'][:][time_step_index]
-      UBOT = fin.variables['UBOT'][:][time_step_index]
-      VBOT = fin.variables['VBOT'][:][time_step_index]
-      
-      #U850 = np.expand_dims(U850, axis=0)
-      #V850 = np.expand_dims(V850, axis=0)
-      #QREFHT = np.expand_dims(QREFHT, axis=0)
+    try:
+      with nc.Dataset(path_to_CAM5_files+"{:04d}-{:02d}-{:02d}-00000.nc".format(year, month, day)) as fin:
+        #Extract the fields of interest
+        TMQ = fin['TMQ'][:][time_step_index]
+        lats = fin['lat'][:]
+        lons = fin['lon'][:]
+        U850 = fin.variables['U850'][:][time_step_index]
+        V850 = fin.variables['V850'][:][time_step_index]
+        QREFHT = fin.variables['QREFHT'][:][time_step_index]
+        PS = fin.variables['PS'][:][time_step_index]
+        PSL = fin.variables['PSL'][:][time_step_index]
+        T200 = fin.variables['T200'][:][time_step_index]
+        T500 = fin.variables['T500'][:][time_step_index]
+        PRECT = fin.variables['PRECT'][:][time_step_index]
+        TS = fin.variables['TS'][:][time_step_index]
+        TREFHT = fin.variables['TREFHT'][:][time_step_index]
+        Z1000 = fin.variables['Z1000'][:][time_step_index]
+        Z200 = fin.variables['Z200'][:][time_step_index]
+        ZBOT = fin.variables['ZBOT'][:][time_step_index]
+        UBOT = fin.variables['UBOT'][:][time_step_index]
+        VBOT = fin.variables['VBOT'][:][time_step_index]
+        
+        #U850 = np.expand_dims(U850, axis=0)
+        #V850 = np.expand_dims(V850, axis=0)
+        #QREFHT = np.expand_dims(QREFHT, axis=0)
+    except:
+      print("Could not load in {} Dataset Year: {} Month: {} Day: {} Run_Num: {}".format(cli_args.dataset, year, month, day, run_num))
+      continue
 
+    print("read in variables")
     #The semantic mask is one mask with 1's for TCs, 2's for ARs, and 0's everywhere else
     semantic_mask = np.zeros((image_height, image_width))
     #print("loaded in variables")
@@ -307,27 +352,8 @@ for ii,table_name in enumerate(teca_subtables):
     #A list of booleans indicating corresponding semantic mask has an AR intersecting with a TC
     # intersects =[]
     #Set the semantic mask to 2 where there are AR pixels
-    semantic_mask_AR, ar_detected_bool = get_AR_semantic_mask(np.expand_dims(U850,axis=0), np.expand_dims(V850,axis=0), np.expand_dims(QREFHT,axis=0),time_step_index, semantic_mask)
+    semantic_mask_AR, ar_detected_bool = get_AR_semantic_mask(np.expand_dims(U850,axis=0), np.expand_dims(V850,axis=0), np.expand_dims(QREFHT,axis=0), np.expand_dims(TMQ, axis=0), time_step_index, semantic_mask, mode=cli_args.ar_threshold)
     
-    #initialize the TC binarization masks
-    semantic_mask_TMQ = semantic_mask_AR.copy()
-    semantic_mask_U850 = semantic_mask_AR.copy()
-    #semantic_mask_UBOT = semantic_mask_AR.copy()
-    semantic_mask_V850 = semantic_mask_AR.copy()
-    # semantic_mask_VBOT = semantic_mask_AR.copy()
-    # semantic_mask_QREFHT = semantic_mask_AR.copy()
-    # semantic_mask_PS = semantic_mask_AR.copy()
-    # semantic_mask_PSL = semantic_mask_AR.copy()
-    # semantic_mask_T200 = semantic_mask_AR.copy()
-    # semantic_mask_T500 = semantic_mask_AR.copy()
-    semantic_mask_PRECT = semantic_mask_AR.copy()
-    # semantic_mask_TS = semantic_mask_AR.copy()
-    # semantic_mask_TREFHT = semantic_mask_AR.copy()
-    # semantic_mask_Z1000 = semantic_mask_AR.copy()
-    # semantic_mask_Z200 = semantic_mask_AR.copy()
-    # semantic_mask_PS = semantic_mask_AR.copy()
-    # semantic_mask_ZBOT = semantic_mask_AR.copy()
-
     # num_instances = 0
     #Note: the following method will append one mask for each AR instance to "instance_masks."  This feature
     #will be useful for instance segmentation in the future. For ECCV, we are only doing semantic segmentation.
@@ -336,8 +362,27 @@ for ii,table_name in enumerate(teca_subtables):
     #time_step_index*3 yields 0,3,6,9,12,15,18,or21
     curr_table_time = curr_table[curr_table['hour'] == time_step_index*3]
     #print("LENCURRTABLETIME: " + str(len(curr_table_time)))
+    semantic_mask_combined = semantic_mask_AR.copy()
     if len(curr_table_time) > 0:
-      # num_instances += len(curr_table_time)
+      #initialize the TC binarization masks
+      semantic_mask_TMQ = semantic_mask_AR.copy()
+      semantic_mask_U850 = semantic_mask_AR.copy()
+      #semantic_mask_UBOT = semantic_mask_AR.copy()
+      semantic_mask_V850 = semantic_mask_AR.copy()
+      # semantic_mask_VBOT = semantic_mask_AR.copy()
+      # semantic_mask_QREFHT = semantic_mask_AR.copy()
+      # semantic_mask_PS = semantic_mask_AR.copy()
+      # semantic_mask_PSL = semantic_mask_AR.copy()
+      # semantic_mask_T200 = semantic_mask_AR.copy()
+      # semantic_mask_T500 = semantic_mask_AR.copy()
+      semantic_mask_PRECT = semantic_mask_AR.copy()
+      # semantic_mask_TS = semantic_mask_AR.copy()
+      # semantic_mask_TREFHT = semantic_mask_AR.copy()
+      # semantic_mask_Z1000 = semantic_mask_AR.copy()
+      # semantic_mask_Z200 = semantic_mask_AR.copy()
+      # semantic_mask_PS = semantic_mask_AR.copy()
+      # semantic_mask_ZBOT = semantic_mask_AR.copy()
+        # num_instances += len(curr_table_time)
       for index, row in curr_table_time.iterrows():
         #Find the lat/ lon start and end indices of the box around the tropical cyclone center
         lat_end_index = find_nearest(lats, row['lat'] + row['r0'])
@@ -387,44 +432,51 @@ for ii,table_name in enumerate(teca_subtables):
           semantic_mask_combined[lat_start_index: lat_end_index, lon_start_index: lon_end_index][np.where(temp == 1)] = 1
         
       #The following if condition tests if the flood fill algorithm found any ARs
-      if ar_detected_bool:
-      #if len(instance_masks) > 0:
-        #print('now saving')
+    #if ar_detected_bool:
+    #if len(instance_masks) > 0:
+      #print('now saving')
 
-        channel_list = [TMQ, U850, V850, UBOT, VBOT, QREFHT, PS, PSL, T200, T500, PRECT, TS, TREFHT, Z1000, Z200, ZBOT]
+    channel_list = [TMQ, U850, V850, UBOT, VBOT, QREFHT, PS, PSL, T200, T500, PRECT, TS, TREFHT, Z1000, Z200, ZBOT]
 
-        save_data = np.stack(channel_list, axis=-1)
-        #print(save_data.shape)
-        save_data_stats = np.zeros((4,16))
-        for channel_index, channel in enumerate(channel_list):
-          save_data_stats[:,channel_index] = np.asarray([np.mean(channel), np.max(channel), np.min(channel),np.std(channel)])
-        
-        save_labels = semantic_mask_combined
-        #print("SAVE LABELS" + str(save_labels.shape))
-        background_class = np.sum(semantic_mask==0)/(768*1152.0)
-        tc_class = np.sum(semantic_mask_combined==1)/(768*1152.0)
-        ar_class = np.sum(semantic_mask_combined==2)/(768*1152.0)
-        save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined),background_class, tc_class, ar_class])
-        save_labels_stats = save_labels_stats.reshape((7,1))
-        #print(save_labels_stats)
-        #try:
-        #f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
-        f = h5py.File("{}data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(cli_args.label_output_dir, year,month,day, time_step_index, run_num),"w")
-        grp = f.create_group("climate")
-        grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
-        grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
-        #f.close()
+    save_data = np.stack(channel_list, axis=-1)
+    #print(save_data.shape)
+    save_data_stats = np.zeros((4,16))
+    for channel_index, channel in enumerate(channel_list):
+      save_data_stats[:,channel_index] = np.asarray([np.mean(channel), np.max(channel), np.min(channel),np.std(channel)])
+    
+    save_labels = semantic_mask_combined
+    #print("SAVE LABELS" + str(save_labels.shape))
+    background_class = np.sum(semantic_mask==0)/(768*1152.0)
+    tc_class = np.sum(semantic_mask_combined==1)/(768*1152.0)
+    ar_class = np.sum(semantic_mask_combined==2)/(768*1152.0)
+    save_labels_stats = np.asarray([np.mean(semantic_mask_combined), np.max(semantic_mask_combined), np.min(semantic_mask_combined),np.std(semantic_mask_combined),background_class, tc_class, ar_class])
+    save_labels_stats = save_labels_stats.reshape((7,1))
+    #print(save_labels_stats)
+    #try:
+    #f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+    f = h5py.File("{}data-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(cli_args.label_output_dir, year,month,day, time_step_index, run_num),"w")
+    grp = f.create_group("climate")
+    grp.create_dataset("data",(768,1152,16),dtype="f",data=save_data)
+    grp.create_dataset("data_stats",(4,16),dtype="f",data=save_data_stats)
+    #f.close()
 
-        #f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
-        #f = h5py.File("/global/cscratch1/sd/mayur/segm_labels/segm_h5_v3_HAPPI15/labels/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
-        #grp = f.create_group("climate")
-        grp.create_dataset("labels_0",(768,1152),dtype="f",data=save_labels)
-        grp.create_dataset("labels_0_stats",(7,1),dtype="f",data=save_labels_stats)
-        f.close()  
-        #except:
-        #  print("I could not create/process this file. It could be duplicates or some other mismatch in the data")
+    #f = h5py.File("/global/cscratch1/sd/amahesh/segm_h5_v3_HAPPI15/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+    #f = h5py.File("/global/cscratch1/sd/mayur/segm_labels/segm_h5_v3_HAPPI15/labels/labels-{:04d}-{:02d}-{:02d}-{:02d}-{:01d}.h5".format(year,month,day, time_step_index, run_num),"w")
+    #grp = f.create_group("climate")
+    grp.create_dataset("labels_0",(768,1152),dtype="f",data=save_labels)
+    grp.create_dataset("labels_0_stats",(7,1),dtype="f",data=save_labels_stats)
+    f.close()  
+    #except:
+    #  print("I could not create/process this file. It could be duplicates or some other mismatch in the data")
 
-        if ii % 8000 == 0:
-          plot_mask(lons, lats, save_data[:,:,0], save_labels,
-               year, month, day, time_step_index, run_num)
+    print("saved file: Year: {}: Month: {} Day: {} Time_Step_Index: {} run_num {}".format(year, month, day, time_step_index, run_num))
+    if ii % 6000 == 0 or True:
+      plot_mask(lons, lats, save_data[:,:,0], save_labels,
+           year, month, day, time_step_index, run_num)
+      if cli_args.ar_threshold == "IVT":
+        IVT_u = U850 * QREFHT
+        IVT_v = V850 * QREFHT
+        IVT = np.sqrt(IVT_u**2 + IVT_v**2)
+        plot_mask(lons, lats, IVT.squeeze(), save_labels,
+           year, month, day, time_step_index, run_num, print_field="IVT")
 print("finished")
