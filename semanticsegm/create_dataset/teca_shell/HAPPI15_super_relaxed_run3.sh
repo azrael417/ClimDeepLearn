@@ -2,7 +2,7 @@
 
 #SBATCH -A dasrepo
 #SBATCH --job-name=teca_HAPPI_15_super_relaxed_run3
-#SBATCH --time=02:30:00
+#SBATCH --time=04:30:00
 #SBATCH --nodes=108
 #SBATCH --exclusive
 #SBATCH --output=teca_HAPPI_15_super_relaxed_run3.out

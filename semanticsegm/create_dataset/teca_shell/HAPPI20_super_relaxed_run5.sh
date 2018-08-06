@@ -1,6 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH -A dasrepo
+<<<<<<< HEAD
 #SBATCH --job-name=teca_HAPPI_20_super_relaxed_5
 #SBATCH --time=02:30:00
 #SBATCH --nodes=108
@@ -24,7 +25,6 @@ cd /global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAP
 pwd
 
 files_regex='.*\.nc$'
-
 
 srun -n 7300 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \

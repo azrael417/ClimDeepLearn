@@ -70,6 +70,11 @@ class StoreDictKeyPair(argparse.Action):
             my_dict[k] = v
         setattr(namespace, self.dest, my_dict)
 
+def ensure_type(input, dtype):
+    if input.dtype != dtype:
+        return tf.cast(input, dtype)
+    else:
+        return input
 
 def conv(x, nf, sz, wd, stride=1): 
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
@@ -210,7 +215,7 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             if p: x = tf.layers.dropout(x, rate=p, training=training)
             _,f,r,c = x.get_shape().as_list()
         #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
-        x = tf.transpose(x,[0,2,3,1]) #necessary because sparse softmax cross entropy does softmax over last axis
+        x = ensure_type(tf.transpose(x,[0,2,3,1]), tf.float32) #necessary because sparse softmax cross entropy does softmax over last axis
 
         #if median_filter:
         #    x = median_pool(x, 3, [1,1,1,1])
@@ -404,7 +409,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
             print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
 
         if horovod:
-            loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
+            loss_avg = hvd.allreduce(ensure_type(loss, tf.float32))
         else:
             loss_avg = tf.identity(loss)
 
@@ -555,7 +560,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                             print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start) ))
                         else:
                             if comm_rank == 0:
-                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start) ))
+                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start) ))
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -611,6 +616,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
                         #reset counters
                         epoch += 1
                         step = 0
+                        t_sustained_start = time.time()
 
                         nvtx.RangePop() # Epoch
                         nvtx.RangePush("Epoch", epoch)
