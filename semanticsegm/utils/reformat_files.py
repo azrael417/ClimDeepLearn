@@ -62,11 +62,15 @@ def main():
                 dset_d = f.create_dataset("climate/data", (16,768,1152), chunks=(16,768,1152))
                 dset_d[...] = data[...]
                 #create labels dataset
-                dset_l = f.create_dataset("climate/labels", (768,1152), chunks=(768,1152))
+                dset_l = f.create_dataset("climate/labels", (2,768,1152), chunks=(2,768,1152))
                 dset_l[...] = labels[...]
-                #create stats dataset
+                #create data stats dataset
                 dset_s = f.create_dataset("climate/stats", (16,4), chunks=(16,4))
                 dset_s[...] = data_stats[...]
+                #create labels stats dataset
+                dset_s = f.create_dataset("climate/labels_stats", (2,3), chunks=(2,3))
+                dset_s[...] = labels_stats[...]
+                
         except:
             print("cannot open {} for writing".format(outfilename))
             continue
