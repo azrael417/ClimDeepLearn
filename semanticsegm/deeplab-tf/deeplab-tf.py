@@ -707,7 +707,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                         end_time = time.time()
                         #print epoch report
                         if per_rank_output:
-                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
+                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         else:
                             if comm_rank == 0:
                                 print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
