@@ -163,7 +163,7 @@ def get_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
     
 
 #larc optimizer:
-def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
+def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod, reduce_fp16=False):
     #get learning rate
     learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
 
@@ -208,8 +208,12 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
             if use_horovod and (hvd.size() > 1):
                 # if we ask for an average, it does a scalar divide, but
                 #  we can bake that into the scaling below
-                g = hvd.allreduce(g, average=False)
                 g_scale = 1. / hvd.size()
+                g = tf.scalar_mul(g_scale, g)
+                if (reduce_fp16):
+                    g = tf.cast(hvd.allreduce(tf.cast(g, tf.float16), average=False), tf.float32)
+                else:
+                    g = hvd.allreduce(g, average=False)
             else:
                 g_scale = 1
 
@@ -219,15 +223,13 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
             larc_local_lr = control_flow_ops.cond(
                 pred = math_ops.logical_and( math_ops.not_equal(v_norm, tf.constant(0.0)),
                                             math_ops.not_equal(g_norm, tf.constant(0.0)) ),
-                                            true_fn = lambda: (LARC_eta * g_scale) * v_norm / g_norm,
+                                            true_fn = lambda: (LARC_eta) * v_norm / g_norm,
                                             false_fn = lambda: LARC_epsilon)
 
             if LARC_mode=="scale":
                 effective_lr = larc_local_lr
             else:
                 effective_lr = math_ops.minimum(larc_local_lr, 1.0)
-
-            effective_lr *= g_scale
 
             #multiply gradients
             g_scaled = math_ops.scalar_mul(effective_lr, g)

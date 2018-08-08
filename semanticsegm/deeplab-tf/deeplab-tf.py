@@ -373,7 +373,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor, reduce_fp16):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -440,6 +440,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
         print("Disable image save: {}".format(disable_imsave))
+        print("fp16 Reduce: {}".format(reduce_fp16))
 
     #compute epochs and stuff:
     if fs_type == "local":
@@ -562,7 +563,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             if comm_rank==0:
                 print("Enabling LARC")
             train_op, lr = get_larc_optimizer(optimizer, loss, global_step,
-                                              num_steps_per_epoch, horovod)
+                                              num_steps_per_epoch, horovod, reduce_fp16)
         else:
             train_op, lr = get_optimizer(optimizer, loss, global_step,
                                          num_steps_per_epoch, horovod)
@@ -812,6 +813,7 @@ if __name__ == '__main__':
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--reduce_fp16",action="store_true",help="Set flag to perform allreduces in fp16")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -850,4 +852,5 @@ if __name__ == '__main__':
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
          output_sampling=parsed.sampling,
-         scale_factor=parsed.scale_factor)
+         scale_factor=parsed.scale_factor,
+         reduce_fp16=parsed.reduce_fp16)
