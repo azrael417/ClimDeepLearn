@@ -1,75 +1,108 @@
 import numpy as np
 import h5py as h5
 import os
+import sys
 import argparse
 
+#enable mpi4py
+from mpi4py import MPI
 
 def main():
-    excludelist=["data-2107-04-28-00-3.h5", "labels-2107-04-28-00-3.h5"]
     
-    print("Going to argparse")
     AP = argparse.ArgumentParser()
-    AP.add_argument("--input_path",type=str,default="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3/")
-    AP.add_argument("--output_path",type=str,default="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat")
+    AP.add_argument("--input_path", type=str, required=True, help="Path to input files.")
+    AP.add_argument("--output_path", type=str, required=True, help="Path to output files.")
+    AP.add_argument("--update", action='store_true', help="Check which files are already present in output_path and only generate the new ones.")
     parsed = AP.parse_args()
-    print(parsed.input_path)
-    print(parsed.output_path)
-    #path
-    #parsed.input_path="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3"
-    #parsed.output_path="/gpfs/alpinetds/scratch/tkurth/csc190/segm_h5_v3_reformat"
+    
+    #duplicate comm:
+    comm = MPI.COMM_WORLD.Dup()
+    comm_size = comm.Get_size()
+    comm_rank = comm.Get_rank()
+
+    if comm_rank == 0:
+        print("Copying data from {} to {}.".format(parsed.input_path,parsed.output_path))
     
     #create output path if not exists
-    if not os.path.isdir(parsed.output_path):
+    if comm_rank == 0 and not os.path.isdir(parsed.output_path):
         os.makedirs(parsed.output_path)
     
     #look for labels and data files
-    labelfiles = sorted([x for x in os.listdir(parsed.input_path) if x.startswith("label")])
-    datafiles = sorted([x for x in os.listdir(parsed.input_path) if x.startswith("data")])
-    outfiles = sorted([x for x in os.listdir(parsed.output_path) if x.startswith("data")])
+    infiles = sorted([x for x in os.listdir(parsed.input_path) if x.startswith("data")])
     
-    #only use the data where we have labels for and vice versa
-    datafiles = sorted([x for x in datafiles if x.replace("data","labels") in labelfiles and not x in outfiles+excludelist])
-    labelfiles = sorted([x for x in labelfiles if x.replace("labels","data") in datafiles and not x.replace("labels","data") in outfiles+excludelist])
+    #remove files which are already done
+    if parsed.update:
+        donefiles = set(os.listdir(parsed.output_path))
+        infiles = [x for x in infiles if x not in donefiles]
 
-    #iterate over files and write
-    for datafile,labelfile in zip(datafiles,labelfiles):
-        print("Working on {} {}".format(datafile,labelfile))
+    #print result
+    if comm_rank == 0:
+        print("Found {nf} files.".format(nf=len(infiles)))
+
+    #chunk list of files
+    chunk_size = len(infiles) // comm_size
+    datafiles = infiles[ comm_rank*chunk_size : ((comm_rank+1)*chunk_size) ]
     
+    #add the remainder to rank0:
+    if comm_rank == 0 and (comm_size*chunk_size) < len(infiles):
+        datafiles += [ infiles[ (comm_size)*chunk_size : ] ]
+
+    #print rank and numfiles
+    print("Rank {nr} will work on {nf} files.".format(nr=comm_rank, nf=len(datafiles)))
+    comm.Barrier()
+    
+    #iterate over files and write
+    for datafile in datafiles:
+
+        #read data
         try:
             #data
-            with h5.File(parsed.input_path+"/"+datafile,"r") as f:
+            with h5.File(os.path.join(parsed.input_path, datafile),"r") as f:
                 data = np.transpose(f["climate"]["data"][...],[2,0,1]).astype(np.float32)
+                labels = np.expand_dims(f["climate"]["labels_0"][...].astype(np.int32), axis=0)
+                labels = np.concatenate([labels, np.expand_dims(f["climate"]["labels_1"][...].astype(np.int32), axis=0)], axis=0)
                 data_stats = np.transpose(f["climate"]["data_stats"][...],[1,0]).astype(np.float32)
+            
+            #compute labels stats
+            labels_stats=np.zeros((2,3), dtype=np.int32)
+            for l in range(0,2):
+                uniqs, cnts = np.unique(labels[l,:,:], return_counts=True)
+                uniqs = list(uniqs)
+                cnts = list(cnts)
+                cntdct = {x[0]:x[1] for x in zip(uniqs, cnts)}
+                for item in cntdct:
+                    labels_stats[l,item] = cntdct[item]
+
         except:
             print("cannot open {} for reading".format(datafile))
             continue
-    
-        try:
-            #label
-            with h5.File(parsed.input_path+"/"+labelfile,"r") as f:
-                labels = f["climate"]["labels"][...].astype(np.int32)
-        except:
-            print("cannot open {} for reading".format(labelfile))
-            continue
-    	
-        outfilename = parsed.output_path+'/'+datafile
+        
+        #create output files
+        outfilename = os.path.join(parsed.output_path, datafile)
+
+        #write data
         try:
             #data
-            with h5.File(outfilename,'w',libver="latest") as f:
+            with h5.File(outfilename,'w') as f:
                 #create group
                 f.create_group("climate")
                 #create data dataset
-                dset_d = f.create_dataset("climate/data", (16,768,1152), chunks=(16,768,1152))
+                dset_d = f.create_dataset("climate/data", (16,768,1152))
                 dset_d[...] = data[...]
                 #create labels dataset
-                dset_l = f.create_dataset("climate/labels", (768,1152), chunks=(768,1152))
+                dset_l = f.create_dataset("climate/labels", (2,768,1152))
                 dset_l[...] = labels[...]
-                #create stats dataset
-                dset_s = f.create_dataset("climate/stats", (16,4), chunks=(16,4))
-                dset_s[...] = data_stats[...]
+                #create data stats dataset
+                dset_ds = f.create_dataset("climate/stats", (16,4))
+                dset_ds[...] = data_stats[...]
+                #create labels stats dataset
+                dset_ls = f.create_dataset("climate/labels_stats", (2,3))
+                dset_ls[...] = labels_stats[...]
+                
         except:
             print("cannot open {} for writing".format(outfilename))
             continue
+
 
 if __name__ == "__main__":
 	main()

@@ -58,13 +58,15 @@ def main():
 
     #compute stats:
     count = 1
-    with h5.File(parsed.input_path+'/'+files[0],'r') as f:
+    with h5.File(os.path.join(parsed.input_path,files[0]),'r') as f:
         meanstats = f["climate"]["stats"][...]
+        meanstats_labels = f["labels"]["labels_stats"][...].astype(np.int64)
         
     for filename in files[1:]:
-        with h5.File(parsed.input_path+'/'+filename,'r') as f:
+        with h5.File(os.path.join(parsed.input_path,filename),'r') as f:
+          
+            #data stats
             stats = f["climate"]["stats"][...]
-            
             # stats order is mean, max, min, stddev
             #keep sum for average
             meanstats[:,0] += stats[:,0]
@@ -74,14 +76,21 @@ def main():
             meanstats[:,2] = np.minimum(meanstats[:,2], stats[:,2])
             #TODO: check
             meanstats[:,3] += (np.square(stats[:,3]) + np.square(stats[:,0]))
+            
+            #labels stats just need to be summed
+            meanstats_labels += f["climate"]["labels_stats"][...].astype(np.int64)
+            
             #increase count
             count += 1
+            
             
     #global reductions
     # count
     total_count = comm.allreduce(count, op=MPI.SUM)
+    
+    #data stats
     # average = sum/count
-    sendbuff = meanstats[:,0].copy() / total_count
+    sendbuff = meanstats[:,0].copy() / float(total_count)
     recvbuff = sendbuff.copy()
     comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
     meanstats[:,0] = recvbuff[:]
@@ -104,17 +113,27 @@ def main():
     comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
     meanstats[:,3] = np.sqrt( (recvbuff[:] - np.square(meanstats[:,0])) / total_count )
 
+    #labels stats
+    # average = sum/count
+    sendbuff = meanstats_labels.copy().astype(np.float32) / float(total_count)
+    recvbuff = sendbuff.copy()
+    comm.Allreduce(sendbuff, recvbuff, op=MPI.SUM)
+    meanstats_labels = recvbuff.copy()
+
     #TODO: merge stddev properly
             
     #write the stuff to a file on each rank:
     if comm_rank == 0:
-        outfilename = parsed.output_path+'/stats.h5'
-        with h5.File(outfilename,'w',libver="latest") as f:
+        outfilename = os.path.join(parsed.output_path, 'stats.h5')
+        with h5.File(outfilename, 'w') as f:
             #create group
             f.create_group("climate")
             #create stats dataset
-            dset_s = f.create_dataset("climate/stats", (16,4), chunks=(16,4))
+            dset_s = f.create_dataset("climate/stats", (16,4))
             dset_s[...] = meanstats[...]
+            #create labelstats dataset
+            dset_l = f.create_dataset("climate/labels_stats", (2,3))
+            dset_l[...] = meanstats_labels[...]
             
 if __name__ == "__main__":
     main()
