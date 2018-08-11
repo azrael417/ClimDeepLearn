@@ -28,6 +28,7 @@ if __name__ == "__main__":
   parser.add_argument('--dataset', type=str, help='select from the following: HAPPI20, HAPPI15, All-Hist')
   parser.add_argument('--vis_output_dir', type=str, help='directory to output visualizations of the label files')
   parser.add_argument('--parallel', action='store_true', help='whether or not to create the dataset in parallel')
+  parser.add_argument('--run_from_second_half', action='store_true', help='Run the entire second half of the dataset (in case a job dies)')
   cli_args = parser.parse_args()
 
 if cli_args.parallel:
@@ -294,25 +295,29 @@ progress_counter = 0
 
 #print("before loading teca_subtables")
 
-#The TECA subtables are csv versions of the TECA output table (one subtable for each day that TECA was run) 
-#The original TECA output table is in .bin format and in Karthik's scratch.
-
 path_to_sample_subtables = '/global/cscratch1/sd/amahesh/gb_helper/{}/label_0/subtables/*.csv'.format(cli_args.dataset)
 
 sample_teca_subtables = np.sort(np.asarray([os.path.basename(x) for x in glob.glob(path_to_sample_subtables)]))
+if cli_args.run_from_second_half:
+  sample_teca_subtables = sample_teca_subtables[len(sample_teca_subtables)/3:]
+# import IPython; IPython.embed()
 # np.random.seed(0)
 # shuffle_indices = np.random.permutation(len(teca_subtables)) 
 # teca_subtables = teca_subtables[shuffle_indices]
 #print("loaded in teca_subtables")
 
+print("starting for loop")
 for ii,table_name in enumerate(sample_teca_subtables):
   if cli_args.parallel:
     if ii % size != rank: continue
 
+  #SAmple table_name: teca_labels_2115-12-31-6.csv
   year = int(table_name[12:16])
   month = int(table_name[17:19])
   day = int(table_name[20:22])
   run_num = int(table_name[-5:-4])
+
+  print("Loading in {} Dataset Year: {} Month: {} Day: {} Run_Num: {}".format(cli_args.dataset, year, month, day, run_num))
 
   # if ii % 30 == 0:
     # print("Current year: {}; Current month: {}; Current run number: {}".format(year, month, run_num))
@@ -390,7 +395,7 @@ for ii,table_name in enumerate(sample_teca_subtables):
     f.close()  
     
     print("saved file: Year: {}: Month: {} Day: {} Time_Step_Index: {} run_num {}".format(year, month, day, time_step_index, run_num))
-    if ii % 100 == 0 or year==2106 or year ==2110 or year==2115:
+    if ii % 100 == 0 or year==2006 or year ==2011 or year==2014:
       plot_mask(lons, lats, save_data[:,:,0], save_label_0,
            year, month, day, time_step_index, run_num, print_field="label_0")
       plot_mask(lons, lats, save_data[:,:,0], save_label_1,

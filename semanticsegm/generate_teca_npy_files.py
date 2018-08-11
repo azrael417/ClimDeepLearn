@@ -22,13 +22,17 @@ if __name__ == "__main__":
 		if cli_args.dataset == 'All-Hist':
 			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/All-Hist/CAM5-1-0.25degree_All-Hist_est1_v3_run*/TECA2/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run*.bin'
 		elif cli_args.dataset == 'HAPPI20':
-			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run[12346]/TECA2/wind_tracks_fvCAM5_HAPPI20_run[123466].bin'
+			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI20/fvCAM5_HAPPI20_run[12346]/TECA2/wind_tracks_fvCAM5_HAPPI20_run[12346].bin'
 		elif cli_args.dataset == 'HAPPI15':
 			teca_regex = '/global/cscratch1/sd/mwehner/machine_learning_climate_data/HAPPI15/fvCAM5_HAPPI15_run*/TECA2/wind_tracks_fvCAM5_HAPPI15_run*.bin'
 	elif cli_args.label_version == 'label_1':
 		teca_regex = "/global/project/projectdirs/dasrepo/gb2018/teca/teca_{}_run*_super_relaxed/wind_tracks.bin".format(cli_args.dataset)
 
 filenames = glob(teca_regex)
+happi_20_label_0_run_5 = "/global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI20_run5_default/wind_tracks.bin"
+if cli_args.dataset == "HAPPI20" and cli_args.label_version == 'label_0':
+	filenames.append(happi_20_label_0_run_5)
+
 print("Number of files found: {}".format(len(filenames)))
 #filename = '/global/cscratch1/sd/karthik_/TECA2.0Demo/demo_tracks/wind_tracks_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
 #filename = './candidates_CAM5-1-0.25degree_All-Hist_est1_v3_run2.bin'
@@ -76,11 +80,15 @@ for filename in filenames:
 	day.extend(list(table.get_column('day').as_array()))
 	hour.extend(list(table.get_column('hour').as_array()))
 	storm_id.extend(list(table.get_column('storm_id').as_array()))
-	if cli_args.dataset == 'label_0':
-		run_nums.extend([int(filename[-5:-4])] * table.get_number_of_rows())
+
+	if filename == happi_20_label_0_run_5:
+		run_nums.extend([5] * table.get_number_of_rows())
 	else:
-		index_of_run = filename.find('run')
-		run_nums.extend([int(filename[index_of_run+3])] * table.get_number_of_rows())
+		if cli_args.dataset == 'label_0':
+			run_nums.extend([int(filename[-5:-4])] * table.get_number_of_rows())
+		else:
+			index_of_run = filename.find('run')
+			run_nums.extend([int(filename[index_of_run+3])] * table.get_number_of_rows())
 	# print(len(track_id))
 	#print(lon.size)
 	#print(lat.size)

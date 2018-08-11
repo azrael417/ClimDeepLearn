@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -A dasrepo
-#SBATCH --job-name=teca_HAPPI_15_wind_track_super_relaxed_1
+#SBATCH --job-name=teca_HAPPI_15_wind_track_super_relaxed_5
 #SBATCH --output=teca_HAPPI_15_wind_tracks_super_relaxed_run5.out
 #SBATCH --error=teca_HAPPI_15_wind_tracks_super_relaxed_run5.err
 #SBATCH -p debug
