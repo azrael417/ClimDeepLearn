@@ -665,6 +665,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
 
             prev_mem_usage = 0
             t_sustained_start = time.time()
+            r_peak = 0
 
             nvtx.RangePush("Training Loop", 4)
             nvtx.RangePush("Epoch", epoch)
@@ -688,6 +689,9 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                     train_loss = sum(recent_losses) / len(recent_losses)
                     nvtx.RangePop() # Step
                     step += 1
+
+                    r_inst = 1e-12 * flops / (t_inst_end-t_inst_start)
+                    r_peak = max(r_peak, r_inst)
                     
                     #print step report
                     eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
@@ -700,7 +704,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                 if mem_used[0] > prev_mem_usage:
                                     print("memory usage: {:.2f} GB / {:.2f} GB".format(mem_used[0] / 2.0**30, mem_used[1] / 2.0**30))
                                     prev_mem_usage = mem_used[0]
-                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}, lr {:.2g}".format(train_steps, num_steps, train_loss, time.time()-start_time, 1e-12 * flops / (t_inst_end-t_inst_start), cur_lr))
+                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}, r_peak {:.3f}, lr {:.2g}".format(train_steps, num_steps, train_loss, time.time()-start_time, r_inst, r_peak, cur_lr))
 
                     #do the validation phase
                     if train_steps_in_epoch == 0:
