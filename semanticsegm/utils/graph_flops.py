@@ -37,13 +37,14 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
             #print o.name, o.inputs[0], o.inputs[1], o.outputs[0]
             #print o
             fmt = o.get_attr('data_format')
-            assert(fmt == format)
+            if format != fmt:
+                print 'WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format)
             strides = o.get_attr('strides')
             padding = o.get_attr('padding').lower()
             in_size = o.inputs[0].shape.as_list()
             if in_size[0] is None:
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
-            if format == 'NCHW':
+            if fmt == 'NCHW':
               in_size = tuple(in_size)
               strides = tuple((int(strides[2]), int(strides[3])))
             else:
@@ -70,13 +71,15 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
         if o.type == 'Conv2DBackpropInput':
             #print o.name, o.inputs[2], o.inputs[1], o.outputs[0]
             fmt = o.get_attr('data_format')
-            assert(fmt == format)
+            #assert(fmt == format)
+            if format != fmt:
+                print 'WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format)
             strides = o.get_attr('strides')
             padding = o.get_attr('padding').lower()
             in_size = o.inputs[2].shape.as_list()
             if in_size[0] is None:
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
-            if format == 'NCHW':
+            if fmt == 'NCHW':
               in_size = tuple(in_size)
               strides = tuple((int(strides[2]), int(strides[3])))
             else:
