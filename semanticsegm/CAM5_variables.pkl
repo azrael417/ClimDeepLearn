@@ -1,0 +1,167 @@
+(dp0
+S'TMQ'
+p1
+(dp2
+S'units'
+p3
+Vkg/m2
+p4
+sS'long_name'
+p5
+VTotal (vertically integrated) precipitable water
+p6
+ssS'ZBOT'
+p7
+(dp8
+g3
+Vm
+p9
+sg5
+VLowest model level height
+p10
+ssS'V850'
+p11
+(dp12
+g3
+Vm/s
+p13
+sg5
+VMeridional wind at 850 mbar pressure surface
+p14
+ssS'PSL'
+p15
+(dp16
+g3
+VPa
+p17
+sg5
+VSea level pressure
+p18
+ssS'PS'
+p19
+(dp20
+g3
+VPa
+p21
+sg5
+VSurface pressure
+p22
+ssS'TREFHT'
+p23
+(dp24
+g3
+VK
+p25
+sg5
+VReference height temperature
+p26
+ssS'TS'
+p27
+(dp28
+g3
+VK
+p29
+sg5
+VSurface temperature (radiative)
+p30
+ssS'QREFHT'
+p31
+(dp32
+g3
+Vkg/kg
+p33
+sg5
+VReference height humidity
+p34
+ssS'PRECT'
+p35
+(dp36
+g3
+Vm/s
+p37
+sg5
+VTotal (convective and large-scale) precipitation rate (liq + ice)
+p38
+ssS'Z1000'
+p39
+(dp40
+g3
+Vm
+p41
+sg5
+VGeopotential Z at 700 mbar pressure surface
+p42
+ssS'Z200'
+p43
+(dp44
+g3
+Vm
+p45
+sg5
+VGeopotential Z at 200 mbar pressure surface
+p46
+ssS'U850'
+p47
+(dp48
+g3
+Vm/s
+p49
+sg5
+VZonal wind at 850 mbar pressure surface
+p50
+ssS'T500'
+p51
+(dp52
+g3
+VK
+p53
+sg5
+VTemperature at 500 mbar pressure surface
+p54
+ssS'UBOT'
+p55
+(dp56
+g3
+Vm/s
+p57
+sg5
+VLowest model level zonal wind
+p58
+ssS'T200'
+p59
+(dp60
+g3
+VK
+p61
+sg5
+VTemperature at 200 mbar pressure surface
+p62
+ssS'VBOT'
+p63
+(dp64
+g3
+Vm/s
+p65
+sg5
+VLowest model level meridional wind
+p66
+ssS'channel_order'
+p67
+(lp68
+g1
+ag47
+ag11
+ag55
+ag63
+ag31
+ag19
+ag15
+ag59
+ag51
+ag35
+ag27
+ag23
+ag39
+ag43
+ag7
+as.
