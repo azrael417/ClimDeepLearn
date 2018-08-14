@@ -11,6 +11,8 @@ def main():
     AP.add_argument("--output_file", type=str, required=True, help="Path to output file.")
     parsed = AP.parse_args()
     
+    print(parsed.input_files)
+    
     #compute stats:
     for filename in parsed.input_files:
       with h5.File(os.path.join(filename, files[0]), 'r') as f:
