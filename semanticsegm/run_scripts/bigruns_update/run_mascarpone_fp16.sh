@@ -2,6 +2,9 @@
 # Disable multiple threads
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
+#better deconvs
+#export OMPI_LD_PRELOAD_PREPEND="${1}/${VENV}/lib/directconv.so"
+
 #disable adaptive routing
 export PAMI_IBV_ENABLE_OOO_AR=0
 export PAMI_IBV_QP_SERVICE_LEVEL=0
@@ -10,7 +13,6 @@ export PAMI_IBV_QP_SERVICE_LEVEL=0
 export HOROVOD_SLEEP_INTERVAL=2
 export HOROVOD_USE_PRIORITY=0
 
-VENV=pyvenv_summit_7.5.18
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK

@@ -21,3 +21,6 @@ export OMPI_MCA_osc_pami_allow_thread_multiple=0
 #disable adaptive routing
 export PAMI_IBV_ENABLE_OOO_AR=0
 export PAMI_IBV_QP_SERVICE_LEVEL=0
+
+#python env
+export VENV=pyvenv_summit_8.6.18
