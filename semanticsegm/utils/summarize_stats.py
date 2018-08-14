@@ -58,9 +58,9 @@ def main():
 
     #compute stats:
     count = 1
-    with h5.File(os.path.join(parsed.input_path,files[0]),'r') as f:
+    with h5.File(os.path.join(parsed.input_path, files[0]),'r') as f:
         meanstats = f["climate"]["stats"][...]
-        meanstats_labels = f["labels"]["labels_stats"][...].astype(np.int64)
+        meanstats_labels = f["climate"]["labels_stats"][...].astype(np.int64)
         
     for filename in files[1:]:
         with h5.File(os.path.join(parsed.input_path,filename),'r') as f:

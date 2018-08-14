@@ -12,13 +12,13 @@ export OMP_PROC_BIND=spread
 module load python/3.6-anaconda-4.4
 
 #run the application:
-procs_per_node=1
+procs_per_node=32
 procs_total=$(( ${procs_per_node} * ${SLURM_NNODES} ))
 cores_per_proc=$(( 256 / ${procs_per_node} ))
 
 #paths to files
-ensembles="HAPPI15 HAPPI20"
-#ensembles="All-Hist"
+ensembles="All-Hist HAPPI15 HAPPI20"
+#ensembles="HAPPI20"
 input_dir=/global/cscratch1/sd/amahesh/gb_data
 output_dir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new
 
