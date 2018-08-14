@@ -307,6 +307,12 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         #get label
         label = f['climate']['labels'][...]
 
+        #if new dataset is used, label has a batch index. 
+        #just take the first entry for the moment
+        if label.ndim == 3:
+            label = label[0,:,:]
+        print(label.shape)
+
     # cast data and labels if needed
     if data.dtype != dtype:
         data = data.astype(dtype)
@@ -408,7 +414,7 @@ class h5_input_reader(object):
 #load data routine
 def load_data(input_path, shuffle=True, max_files=-1, use_horovod=True):
     #look for labels and data files
-    files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    files = sorted([x for x in os.listdir(input_path) if "data" in x])
 
     #we will choose to load only the first p files
     if max_files > 0:
