@@ -744,7 +744,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                                                                                                       (loss if per_rank_output else loss_avg),
                                                                                                                       prediction,
                                                                                                                       next_elem[1],
-                                                                                                                      next_elem[2]],
+                                                                                                                      next_elem[3]],
                                                                                                                       feed_dict={handle: val_handle})
                                 
                                 #print some images

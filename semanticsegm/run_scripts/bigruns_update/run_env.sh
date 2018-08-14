@@ -6,7 +6,7 @@ module load cuda/9.2.88
 module load essl
 
 #load old spectrum
-module load spectrum-mpi/10.2.0.4-20180716
+module load spectrum-mpi/10.2.0.5-20180802
 
 #set core files to 0 size
 ulimit -c 0
