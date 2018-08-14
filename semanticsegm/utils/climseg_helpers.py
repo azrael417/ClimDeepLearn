@@ -307,11 +307,12 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         #get label
         label = f['climate']['labels'][...]
 
-        #if new dataset is used, label has a batch index. 
-        #just take the first entry for the moment
-        if label.ndim == 3:
-            chan = np.random.randint(low=0, high=label.shape[0])
-            label = label[chan,:,:]
+    #if new dataset is used, label has a batch index. 
+    #just take the first entry for the moment
+    if label.ndim == 3:
+        chan = np.random.randint(low=0, high=label.shape[0])
+        #chan = 0
+        label = label[chan,:,:]
 
     # cast data and labels if needed
     if data.dtype != dtype:
