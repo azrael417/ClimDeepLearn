@@ -2,19 +2,27 @@
 # Disable multiple threads
 export OMPI_MCA_osc_pami_allow_thread_multiple=0
 
+#disable adaptive routing
+export PAMI_IBV_ENABLE_OOO_AR=0
+export PAMI_IBV_QP_SERVICE_LEVEL=0
+
 # Reduce horovod sleep time, enable priority NCCL stream
 export HOROVOD_SLEEP_INTERVAL=2
 export HOROVOD_USE_PRIORITY=0
 
-VENV=pyvenv_summit_v4
+VENV=pyvenv_summit_7.5.18
 source ${1}/${VENV}/bin/activate
 
 grank=$PMIX_RANK
 lrank=$(($PMIX_RANK%6))
 
-APP="python ./mascarpone-tiramisu-tf-singlefile.py  --datadir ${1}/data/ --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0  --lr ${3} --optimizer=LARC-Adam  --scale_factor ${4} --gradient-lag ${5} --disable_imsave --disable_checkpoints"
+APP="python ./tiramisu-tf.py --datadir_train ${1}/train/data --datadir_validation ${1}/validation/data --chkpt_dir checkpoint.fp32.lag${5} --epochs ${2} --fs local --blocks 2 2 2 4 5 --growth 32 --filter-sz 5 --loss weighted --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=${3},gradient_lag=${5} --scale_factor ${4}"
 
 export PAMI_ENABLE_STRIPING=0
+
+#DEBUG
+#export CUDA_VISIBLE_DEVICES=${lrank}
+#DEBUG
 
 case ${lrank} in
 [0])

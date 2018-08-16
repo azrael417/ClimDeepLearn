@@ -11,19 +11,8 @@ if [ ! -d "${2}" ]; then
     mkdir -p ${2}
 fi
 
-#stage environment
-cp /gpfs/alpinetds/world-shared/ven201/seant/climate/${VENV}.tar ${2}
-tar xf ${2}/${VENV}.tar -C ${2}
-
 #activate
-source ${2}/${VENV}/bin/activate
-
-#some MPI pars
-export OMPI_MCA_osc_pami_allow_thread_multiple=1
-
-#disable adaptive routing
-export PAMI_IBV_ENABLE_OOO_AR=0
-export PAMI_IBV_QP_SERVICE_LEVEL=0
+source activate tensorflow-py27
 
 #arguments: 
 #$1 - source dir
