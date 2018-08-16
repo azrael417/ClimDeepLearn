@@ -4,7 +4,7 @@
 #BSUB -P CSC275PRABHAT
 ##BSUB -P VEN101
 #BSUB -alloc_flags "smt4 nvme"
-#BSUB -J climseg_training
+#BSUB -J dl_fp32_lag1_lr0.0001
 #BSUB -o out_test.%J
 #BSUB -e out_test.%J
 #BSUB -q batch
@@ -27,24 +27,27 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp run_deeplab.sh ${run_dir}/
 cp run_deeplab_fp16.sh ${run_dir}/
-cp ../../deeplab-tf/parallel_stagein.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf*.py ${run_dir}/
-cp ../../deeplab-tf/tiramisu_helpers.py ${run_dir}/
+cp ../../utils/parallel_stagein.py ${run_dir}/
+cp ../../utils/graph_flops.py ${run_dir}/
+cp ../../utils/climseg_helpers.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf.py ${run_dir}/
 
 #step in
 cd ${run_dir}
 
 #datadir
-datadir="/gpfs/alpinetds/world-shared/csc275/climdata_reformat"
+datadir="/gpfs/alpinetds/world-shared/csc275/climdata_split"
 scratchdir="/mnt/bb/"$(whoami)""
-nperproc=250
-numfiles=$(( ${nprocspn} * ${nperproc} )) 
+nperproc_train=250
+nperproc_validation=25
+numfiles_train=$(( ${nprocspn} * ${nperproc_train} )) 
+numfiles_validation=$(( ${nprocspn} * ${nperproc_validation} ))
 
 #run
 cat ${LSB_DJOB_HOSTFILE} | sort | uniq | grep -v login | grep -v batch > host_list
 
-echo "starting stage_in_parallel.sh " `date`
-jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles}
+echo "starting stage_in_parallel.sh" `date`
+jsrun -n ${nnodes} -g 1 -c 42 -a 1 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}
 echo "finished stage_in_parallel.sh" `date`
 
 # Set flag after stage-in to prepend to spectrum-mpi's existing LD_PRELOAD

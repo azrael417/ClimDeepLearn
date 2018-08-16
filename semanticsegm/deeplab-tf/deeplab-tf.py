@@ -52,7 +52,13 @@ except:
     horovod = False
 
 #import helpers
-from tiramisu_helpers import *
+try:
+    script_path = os.path.dirname(sys.argv[0])
+except:
+    script_path = '.'
+sys.path.append(os.path.join(script_path, '..', 'utils'))
+from climseg_helpers import *
+import graph_flops
 
 #GLOBAL CONSTANTS
 image_height =  768 
@@ -62,11 +68,22 @@ image_width = 1152
 _BATCH_NORM_DECAY = 0.9997
 _WEIGHT_DECAY = 5e-4
 
+
+class StoreDictKeyPair(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        my_dict = {}
+        for kv in values.split(","):
+            k,v = kv.split("=")
+            my_dict[k] = v
+        setattr(namespace, self.dest, my_dict)
+
+
 def ensure_type(input, dtype):
     if input.dtype != dtype:
         return tf.cast(input, dtype)
     else:
         return input
+
 
 def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_training, depth=256):
     """Atrous Spatial Pyramid Pooling.
@@ -134,6 +151,8 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
 def deeplab_v3_plus_generator(num_classes,
                               output_stride,
                               base_architecture,
+                              decoder,
+                              batchnorm,
                               pre_trained_model,
                               batch_norm_decay,
                               data_format='channels_last'):
@@ -172,10 +191,26 @@ def deeplab_v3_plus_generator(num_classes,
     base_architecture = 'getter_scope/' + base_architecture
 
     def model(inputs, is_training, dtype=tf.float32):
+        # we can't directly control the instantiation of batchnorms, but
+        #  we can monkey-patch the TF module to turn them into nop's
+        if not batchnorm:
+            from tensorflow.contrib.framework.python.ops import add_arg_scope
+            from tensorflow.contrib.layers.python.layers import layers as layers_to_hack
+            @add_arg_scope
+            def dummy_batch_norm(input, *args, **kwargs):
+                # ideally we'd just pass the input straight through, but
+                #  activations in deep networks can overflow fp16's range
+                input = tf.multiply(input, 0.5)
+                return input
+            orig_batch_norm = layers_to_hack.batch_norm
+            layers_to_hack.batch_norm = dummy_batch_norm
         with tf.variable_scope('getter_scope', custom_getter=float32_variable_storage_getter):
             if dtype != tf.float32:
                 inputs = tf.cast(inputs, dtype)
-            return model_fp32(inputs, is_training)
+            m = model_fp32(inputs, is_training)
+        if not batchnorm:
+            layers_to_hack.batch_norm = orig_batch_norm
+        return m
 
     def model_fp32(inputs, is_training):
         """Constructs the ResNet model given the inputs."""
@@ -204,26 +239,116 @@ def deeplab_v3_plus_generator(num_classes,
         net = end_points[base_architecture + '/block4']
         encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training)
 
+        #decoder_fmt = 'NHWC'
+        #ch_axis = 3
+        decoder_fmt = 'NCHW'
+        ch_axis = 1
+
         with tf.variable_scope("decoder"):
             with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
                 with arg_scope([layers.batch_norm], is_training=is_training):
                     with tf.variable_scope("low_level_features"):
                         low_level_features = end_points[base_architecture + '/block1/unit_3/bottleneck_v2/conv1']
-                        low_level_features = layers_lib.conv2d(low_level_features, 48,
-                                                               [1, 1], stride=1, scope='conv_1x1')
                         low_level_features_size = tf.shape(low_level_features)[1:3]
+                        if decoder_fmt == 'NCHW':
+                            low_level_features = tf.transpose(low_level_features, [ 0, 3, 1, 2 ])
+                        low_level_features = layers_lib.conv2d(low_level_features, 48,
+                                                               [1, 1], stride=1, scope='conv_1x1',
+                                                               data_format=decoder_fmt)
 
                     with tf.variable_scope("upsampling_logits"):
-                        encoder_output = ensure_type(encoder_output, tf.float32)
-                        net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
-                        net = ensure_type(net, low_level_features.dtype)
-                        net = tf.concat([net, low_level_features], axis=3, name='concat')
-                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
-                        net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
-                        net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
-                        net = ensure_type(net, tf.float32)
-                        logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
-                        logits = ensure_type(logits, low_level_features.dtype)
+                        if decoder == 'bilinear':
+                            assert decoder_fmt == 'NHWC'
+                            encoder_output = ensure_type(encoder_output, tf.float32)
+                            net = tf.image.resize_bilinear(encoder_output, low_level_features_size, name='upsample_1')
+                            net = ensure_type(net, low_level_features.dtype)
+                            net = tf.concat([net, low_level_features], axis=3, name='concat')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
+                            net = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                            net = ensure_type(net, tf.float32)
+                            logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
+                            logits = ensure_type(logits, low_level_features.dtype)
+                        elif decoder.startswith('deconv'):
+                            if decoder_fmt == 'NCHW':
+                                encoder_output = tf.transpose(encoder_output, [ 0, 3, 1, 2 ])
+                                inputs = tf.transpose(inputs, [ 0, 3, 1, 2 ])
+                            # expect encoder output at 1/8x input, low level
+                            #  features as 1/4x input
+                            #print 'SIZES', encoder_output.shape.as_list(), low_level_features.shape.as_list(), inputs.shape.as_list()
+                            assert 8*encoder_output.shape.as_list()[2] == inputs.shape.as_list()[2]
+                            assert 4*low_level_features.shape.as_list()[2] == inputs.shape.as_list()[2]
+                            encoder_channels = encoder_output.shape.as_list()[ch_axis]
+                            low_level_channels = low_level_features.shape.as_list()[ch_axis]
+                            inputs_channels = inputs.shape.as_list()[ch_axis]
+                            net = tf.layers.conv2d_transpose(inputs=encoder_output,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             filters=encoder_channels,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            net = tf.concat([net, low_level_features], axis=ch_axis, name='concat')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1',
+                                                    data_format=decoder_fmt)
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2',
+                                                    data_format=decoder_fmt)
+                            # two 2x deconvs instead of the 4x bilinear scale
+                            net = tf.layers.conv2d_transpose(inputs=net,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             filters=256,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            net = tf.layers.conv2d_transpose(inputs=net,
+                                                             strides=(2,2),
+                                                             kernel_size=(3,3),
+				                             padding='same',
+                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             filters=256,
+				                             kernel_initializer=tfk.initializers.he_uniform(),
+				                             bias_initializer=tf.initializers.zeros(),
+                                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            if decoder == 'deconv1x':
+                                # incorporate input data at this level
+                                skip = tf.layers.conv2d(inputs, 64, [3, 3],
+                                                        padding='same',
+                                                        data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+				                        kernel_initializer=tfk.initializers.he_uniform(),
+				                        bias_initializer=tf.initializers.zeros(),
+                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                skip = tf.layers.conv2d(skip, 128, [3, 3],
+                                                        padding='same',
+                                                        data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+				                        kernel_initializer=tfk.initializers.he_uniform(),
+				                        bias_initializer=tf.initializers.zeros(),
+                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                net = tf.concat([net, skip], axis=ch_axis)
+                                net = tf.layers.conv2d(net, 256, [3, 3],
+                                                       padding='same',
+                                                       data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+				                       kernel_initializer=tfk.initializers.he_uniform(),
+				                       bias_initializer=tf.initializers.zeros(),
+                                                       kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                                net = tf.layers.conv2d(net, 256, [3, 3],
+                                                       padding='same',
+                                                       data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+				                       kernel_initializer=tfk.initializers.he_uniform(),
+				                       bias_initializer=tf.initializers.zeros(),
+                                                       kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
+                            
+                            logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1',
+                                                       data_format=decoder_fmt)
+                            if decoder_fmt == 'NCHW':
+                                logits = tf.transpose(logits, [ 0, 2, 3, 1 ])
+                        else:
+                            print 'ERROR: unknown decoder type:', decoder
+                            assert False
                         sm_logits = tf.nn.softmax(logits)
 
         return logits, sm_logits
@@ -242,7 +367,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -265,7 +390,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learning_rate, loss_type, cluster_loss_weight, model, fs_type, opt_type, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, gradient_lag, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -302,20 +427,22 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
     training_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    trn_data, val_data, tst_data = load_data(input_path, trn_sz)
+    trn_data = load_data(input_path_train, True, trn_sz, horovod)
+    val_data = load_data(input_path_validation, False, val_sz, horovod)
     if comm_rank == 0:    
         print("Shape of trn_data is {}".format(trn_data.shape[0]))
+        print("Shape of val_data is {}".format(val_data.shape[0]))
         print("done.")
 
     #print some stats
     if comm_rank==0:
-        print("Learning Rate: {}".format(learning_rate))
         print("Num workers: {}".format(comm_size))
         print("Local batch size: {}".format(batch))
         if dtype == tf.float32:
             print("Precision: {}".format("FP32"))
         else:
             print("Precision: {}".format("FP16"))
+        print("Decoder: {}".format(decoder))
         print("Batch normalization: {}".format(batchnorm))
         print("Channels: {}".format(channels))
         print("Loss type: {}".format(loss_type))
@@ -323,18 +450,30 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
         print("Loss scale factor: {}".format(scale_factor))
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
-        print("Optimizer type: {}".format(opt_type))
-        print("Gradient lag: {}".format(gradient_lag))
+        #print optimizer parameters
+        for k,v in optimizer.iteritems():
+            print("Solver Parameters: {k}: {v}".format(k=k,v=v))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
         print("Disable image save: {}".format(disable_imsave))
 
+    #compute epochs and stuff:
+    if fs_type == "local":
+        num_samples = trn_data.shape[0] // comm_local_size
+    else:
+        num_samples = trn_data.shape[0] // comm_size
+    num_steps_per_epoch = num_samples // batch
+    num_steps = num_epochs*num_steps_per_epoch
+    if per_rank_output:
+        print("Rank {} does {} steps per epoch".format(comm_rank,
+                                                       num_steps_per_epoch))
+
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=output_sampling)
-        val_reader = h5_input_reader(input_path, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
+        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=output_sampling)
+        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
         #create datasets
         if fs_type == "local":
             trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, dtype, shuffle=True)
@@ -345,10 +484,11 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
         
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
-        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype),
+        iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
                                                        ((batch, len(channels), image_height, image_width),
                                                         (batch, image_height, image_width),
-                                                        (batch, image_height, image_width))
+                                                        (batch, image_height, image_width),
+                                                        (batch))
                                                        )
         next_elem = iterator.get_next()
         
@@ -367,7 +507,9 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
 
         #set up model
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8, 
-                                         base_architecture=model,
+                                          base_architecture=model,
+                                          decoder=decoder,
+                                          batchnorm=batchnorm,
                                           pre_trained_model=None, 
                                           batch_norm_decay=None, data_format='channels_first')
 
@@ -388,6 +530,8 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                                                           logits=logit, 
                                                           weights=w_cast, 
                                                           reduction=tf.losses.Reduction.SUM)
+            if scale_factor != 1.0:
+                loss *= scale_factor
             #unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
             #                                                            logits=logit)
             #w_cast = tf.cast(next_elem[2], tf.float32)
@@ -412,6 +556,15 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
         if cluster_loss_weight > 0.0:
             loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
 
+
+        flops = graph_flops.graph_flops(format='NHWC',
+                                        batch=batch,
+                                        sess_config=sess_config)
+
+        flops *= comm_size
+        if comm_rank == 0:
+            print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+
         if horovod:
             loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
         else:
@@ -422,12 +575,14 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
             global_step = tf.train.get_or_create_global_step()
 
         #set up optimizer
-        if opt_type.startswith("LARC"):
+        if optimizer['opt_type'].startswith("LARC"):
             if comm_rank==0:
                 print("Enabling LARC")
-            train_op = get_larc_optimizer(opt_type.split("-")[1], loss, global_step, learning_rate, LARC_mode="clip", LARC_eta=0.002, LARC_epsilon=1./16000., gradient_lag=gradient_lag)
+            train_op, lr = get_larc_optimizer(optimizer, loss, global_step,
+                                              num_steps_per_epoch, horovod)
         else:
-            train_op = get_optimizer(opt_type, loss, global_step, learning_rate)
+            train_op, lr = get_optimizer(optimizer, loss, global_step,
+                                         num_steps_per_epoch, horovod)
 
         #set up streaming metrics
         iou_op, iou_update_op = tf.metrics.mean_iou(labels=next_elem[1],
@@ -444,21 +599,16 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
         else:
             iou_avg = tf.identity(iou_op)
 
-        #compute epochs and stuff:
-        if fs_type == "local":
-            num_samples = trn_data.shape[0] // comm_local_size
-        else:
-            num_samples = trn_data.shape[0] // comm_size
-        num_steps_per_epoch = num_samples // batch
-        num_steps = num_epochs*num_steps_per_epoch
-        if per_rank_output:
-            print("Rank {} does {} steps per epoch".format(comm_rank, num_steps_per_epoch))
-        
+        with tf.device('/device:GPU:0'):
+            mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
+                              tf.contrib.memory_stats.BytesLimit() ]
+
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
         #bcast init for bcasting the model after start
-        init_bcast = hvd.broadcast_global_variables(0)
+        if horovod:
+            init_bcast = hvd.broadcast_global_variables(0)
         #initializers:
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
@@ -512,7 +662,8 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
             if comm_rank == 0 and not disable_checkpoints:
                 load_model(sess, checkpoint_saver, checkpoint_dir)
             #broadcast loaded model variables
-            sess.run(init_bcast)
+            if horovod:
+                sess.run(init_bcast)
             #create iterator handles
             trn_handle, val_handle = sess.run([trn_handle_string, val_handle_string])
             #init iterators
@@ -529,6 +680,10 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
             epoch = 1
             step = 1
 
+            prev_mem_usage = 0
+            t_sustained_start = time.time()
+            r_peak = 0
+
             nvtx.RangePush("Training Loop", 4)
             nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
@@ -538,34 +693,45 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                 try:
                     nvtx.RangePush("Step", step)
                     #construct feed dict
-                    _, tmp_loss = sess.run([train_op,
-                                            (loss if per_rank_output else loss_avg)],
-                                           feed_dict={handle: trn_handle})
+                    t_inst_start = time.time()
+                    _, tmp_loss, cur_lr = sess.run([train_op,
+                                                    (loss if per_rank_output else loss_avg),
+                                                    lr],
+                                                   feed_dict={handle: trn_handle})
+                    t_inst_end = time.time()
+                    mem_used = sess.run(mem_usage_ops)
                     train_steps += 1
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
                     train_loss = sum(recent_losses) / len(recent_losses)
                     nvtx.RangePop() # Step
                     step += 1
+
+                    r_inst = 1e-12 * flops / (t_inst_end-t_inst_start)
+                    r_peak = max(r_peak, r_inst)
                     
                     #print step report
                     eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
                     if (train_steps % loss_print_interval) == 0:
+                        mem_used = sess.run(mem_usage_ops)
                         if per_rank_output:
-                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
+                            print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {:.3f}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
                         else:
                             if comm_rank == 0:
-                                print("REPORT: training loss for step {} (of {}) is {}, time {}".format(train_steps, num_steps, train_loss, time.time()-start_time))
+                                if mem_used[0] > prev_mem_usage:
+                                    print("memory usage: {:.2f} GB / {:.2f} GB".format(mem_used[0] / 2.0**30, mem_used[1] / 2.0**30))
+                                    prev_mem_usage = mem_used[0]
+                                print("REPORT: training loss for step {} (of {}) is {}, time {:.3f}, r_inst {:.3f}, r_peak {:.3f}, lr {:.2g}".format(train_steps, num_steps, train_loss, time.time()-start_time, r_inst, r_peak, cur_lr))
 
                     #do the validation phase
                     if train_steps_in_epoch == 0:
                         end_time = time.time()
                         #print epoch report
                         if per_rank_output:
-                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {} s".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time))
+                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         else:
                             if comm_rank == 0:
-                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {} s".format(epoch, num_epochs, train_loss, time.time() - start_time))
+                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -574,11 +740,12 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                         while True:
                             try:
                                 #construct feed dict
-                                _, tmp_loss, val_model_predictions, val_model_labels = sess.run([iou_update_op,
-                                                                                                 (loss if per_rank_output else loss_avg),
-                                                                                                 prediction,
-                                                                                                 next_elem[1]],
-                                                                                                feed_dict={handle: val_handle})
+                                _, tmp_loss, val_model_predictions, val_model_labels, val_model_filenames = sess.run([iou_update_op,
+                                                                                                                      (loss if per_rank_output else loss_avg),
+                                                                                                                      prediction,
+                                                                                                                      next_elem[1],
+                                                                                                                      next_elem[3]],
+                                                                                                                      feed_dict={handle: val_handle})
                                 
                                 #print some images
                                 if comm_rank == 0 and not disable_imsave:
@@ -590,10 +757,10 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                                         imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png',colormap[val_model_labels[0,...],np.argmax(val_model_predictions[0,...],axis=2)])
                                     else:
-                                        np.save(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',np.argmax(val_model_predictions[0,...],axis=2)*100)
-                                        np.save(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
-                                                +str(eval_steps)+'_rank'+str(comm_rank)+'.npy',val_model_labels[0,...]*100)
+                                        np.savez(image_dir+'/test_epoch'+str(epoch)+'_estep'
+                                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(val_model_predictions[0,...],axis=2)*100, 
+                                                                                                 label=val_model_labels[0,...]*100,
+                                                                                                 filename=val_model_filenames[0])
 
                                 eval_loss += tmp_loss
                                 eval_steps += 1
@@ -620,6 +787,7 @@ def main(input_path, channels, weights, image_dir, checkpoint_dir, trn_sz, learn
                         #reset counters
                         epoch += 1
                         step = 0
+                        t_sustained_start = time.time()
 
                         nvtx.RangePop() # Epoch
                         nvtx.RangePush("Epoch", epoch)
@@ -641,20 +809,25 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
-    AP.add_argument("--datadir",type=str,help="Path to input data")
+    AP.add_argument("--datadir_train",type=str,help="Path to training data")
+    AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
-    AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+   # AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
+    AP.add_argument("--optimizer",action=StoreDictKeyPair)
     AP.add_argument("--model",type=str,default="resnet_v2_101",help="Pick base model [resnet_v2_50, resnet_v2_101].")
+    AP.add_argument("--decoder",type=str,default="bilinear",help="Pick decoder [bilinear,deconv,deconv1x]")
     AP.add_argument("--epochs",type=int,default=150,help="Number of epochs to train")
     AP.add_argument("--batch",type=int,default=1,help="Batch size")
     AP.add_argument("--use_batchnorm",action="store_true",help="Set flag to enable batchnorm")
     AP.add_argument("--dtype",type=str,default="float32",choices=["float32","float16"],help="Data type for network")
     AP.add_argument("--disable_checkpoints",action='store_true',help="Flag to disable checkpoint saving/loading")
     AP.add_argument("--disable_imsave",action='store_true',help="Flag to disable image saving")
+    AP.add_argument("--disable_horovod",action='store_true',help="Flag to disable horovod")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
@@ -669,19 +842,25 @@ if __name__ == '__main__':
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
 
+    #check if we want horovod to be disabled
+    if parsed.disable_horovod:
+        horovod = False
+
     #invoke main function
-    main(input_path=parsed.datadir,
+    main(input_path_train=parsed.datadir_train,
+         input_path_validation=parsed.datadir_validation,
          channels=parsed.channels,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          trn_sz=parsed.trn_sz,
-         learning_rate=parsed.lr,
+         val_sz=parsed.val_sz,
          loss_type=parsed.loss,
          cluster_loss_weight=parsed.cluster_loss_weight,
          model=parsed.model,
+         decoder=parsed.decoder,
          fs_type=parsed.fs,
-         opt_type=parsed.optimizer,
+         optimizer=parsed.optimizer,
          num_epochs=parsed.epochs,
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
@@ -691,6 +870,5 @@ if __name__ == '__main__':
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,
          trace_dir=parsed.trace_dir,
-         gradient_lag=parsed.gradient_lag,
          output_sampling=parsed.sampling,
          scale_factor=parsed.scale_factor)
