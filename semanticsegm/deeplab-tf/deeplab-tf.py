@@ -466,8 +466,11 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     num_steps_per_epoch = num_samples // batch
     num_steps = num_epochs*num_steps_per_epoch
     if per_rank_output:
-        print("Rank {} does {} steps per epoch".format(comm_rank,
+        print("Rank {} performs {} steps per epoch".format(comm_rank,
                                                        num_steps_per_epoch))
+    else:
+        if comm_rank == 0:
+            print("Performing {} steps per epoch".format(num_steps_per_epoch))
 
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
@@ -728,10 +731,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                         end_time = time.time()
                         #print epoch report
                         if per_rank_output:
-                            print("COMPLETED: rank {}, training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(comm_rank, epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
+                            print("COMPLETED: rank {}, training loss for step {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(comm_rank, train_steps, num_steps, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         else:
                             if comm_rank == 0:
-                                print("COMPLETED: training loss for epoch {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(epoch, num_epochs, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
+                                print("COMPLETED: training loss for step {} (of {}) is {}, time {:.3f}, r_sust {:.3f}".format(train_steps, num_steps, train_loss, time.time() - start_time, 1e-12 * flops * num_steps_per_epoch / (end_time-t_sustained_start)))
                         
                         #evaluation loop
                         eval_loss = 0.
@@ -768,17 +771,17 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                 eval_steps = np.max([eval_steps,1])
                                 eval_loss /= eval_steps
                                 if per_rank_output:
-                                    print("COMPLETED: rank {}, evaluation loss for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, eval_loss))
+                                    print("COMPLETED: rank {}, evaluation loss for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, eval_loss))
                                 else:
                                     if comm_rank == 0:
-                                        print("COMPLETED: evaluation loss for epoch {} (of {}) is {}".format(epoch, num_epochs, eval_loss))
+                                        print("COMPLETED: evaluation loss for step {} (of {}) is {}".format(train_steps, num_steps, eval_loss))
                                 if per_rank_output:
                                     iou_score = sess.run(iou_op)
-                                    print("COMPLETED: rank {}, evaluation IoU for epoch {} (of {}) is {}".format(comm_rank, epoch, num_epochs, iou_score))
+                                    print("COMPLETED: rank {}, evaluation IoU for step {} (of {}) is {}".format(comm_rank, train_steps, num_steps, iou_score))
                                 else:
                                     iou_score = sess.run(iou_avg)
                                     if comm_rank == 0:
-                                        print("COMPLETED: evaluation IoU for epoch {} (of {}) is {}".format(epoch, num_epochs, iou_score))
+                                        print("COMPLETED: evaluation IoU for step {} (of {}) is {}".format(train_steps, num_steps, iou_score))
                                 sess.run(iou_reset_op)
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
