@@ -143,7 +143,7 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
                       trainable=trainable,
                       *args, **kwargs)
     if trainable and dtype != tf.float32:
-        variable = tf.cast(variable, dtype)
+        variable = ensure_type(variable, dtype)
     return variable
 
 
@@ -206,7 +206,7 @@ def deeplab_v3_plus_generator(num_classes,
             layers_to_hack.batch_norm = dummy_batch_norm
         with tf.variable_scope('getter_scope', custom_getter=float32_variable_storage_getter):
             if dtype != tf.float32:
-                inputs = tf.cast(inputs, dtype)
+                inputs = ensure_type(inputs, dtype)
             m = model_fp32(inputs, is_training)
         if not batchnorm:
             layers_to_hack.batch_norm = orig_batch_norm
@@ -239,10 +239,12 @@ def deeplab_v3_plus_generator(num_classes,
         net = end_points[base_architecture + '/block4']
         encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training)
 
-        #decoder_fmt = 'NHWC'
-        #ch_axis = 3
-        decoder_fmt = 'NCHW'
-        ch_axis = 1
+        if data_format == "channels_last":
+            decoder_fmt = 'NHWC'
+            ch_axis = 3
+        else:
+            decoder_fmt = 'NCHW'
+            ch_axis = 1
 
         with tf.variable_scope("decoder"):
             with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
@@ -390,7 +392,7 @@ colormap = np.array([[[  0,  0,  0],  #   0      0     black
                      ])
 
 #main function
-def main(input_path_train, input_path_validation, channels, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(device, input_path_train, input_path_validation, channels, data_format, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     nvtx.RangePush("init horovod", 1)
     comm_rank = 0 
@@ -416,8 +418,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     loss_print_interval = 10
     
     #session config
-    sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #1
-                               intra_op_parallelism_threads=1, #6
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
+                               intra_op_parallelism_threads=33, #6
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)
@@ -472,8 +474,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=output_sampling)
-        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
+        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, sample_target=output_sampling)
+        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format)
         #create datasets
         if fs_type == "local":
             trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, dtype, shuffle=True)
@@ -485,7 +487,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
-                                                       ((batch, len(channels), image_height, image_width),
+                                                       ((batch, len(channels), image_height, image_width) if data_format=="channels_first" else (batch, image_height, image_width, len(channels)),
                                                         (batch, image_height, image_width),
                                                         (batch, image_height, image_width),
                                                         (batch))
@@ -511,7 +513,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                           decoder=decoder,
                                           batchnorm=batchnorm,
                                           pre_trained_model=None, 
-                                          batch_norm_decay=None, data_format='channels_first')
+                                          batch_norm_decay=None, 
+                                          data_format=data_format)
 
         logit, prediction = model(next_elem[0], True, dtype)
 
@@ -521,15 +524,26 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         loss = None
         
         #cast the logits to fp32
-        logit = tf.cast(logit, tf.float32)
+        logit = ensure_type(logit, tf.float32)
 
         if loss_type == "weighted":
             #cast weights to FP32
-            w_cast = tf.cast(next_elem[2], tf.float32)
+            w_cast = ensure_type(next_elem[2], tf.float32)
+
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1], 
                                                           logits=logit, 
                                                           weights=w_cast, 
                                                           reduction=tf.losses.Reduction.SUM)
+            if scale_factor != 1.0:
+                loss *= scale_factor
+        elif loss_type == "weighted_mean":
+            #cast weights to FP32
+            w_cast = ensure_type(next_elem[2], tf.float32)
+
+            loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1], 
+                                                          logits=logit, 
+                                                          weights=w_cast, 
+                                                          reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
             if scale_factor != 1.0:
                 loss *= scale_factor
             #unweighted = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=next_elem[1],
@@ -547,7 +561,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             #one-hot-encode
             labels_one_hot = tf.contrib.layers.one_hot_encoding(next_elem[1], 3)
             #cast to FP32
-            labels_one_hot = tf.cast(labels_one_hot, tf.float32)
+            labels_one_hot = ensure_type(labels_one_hot, tf.float32)
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
@@ -557,7 +571,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
 
 
-        flops = graph_flops.graph_flops(format='NHWC',
+        flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW",
                                         batch=batch,
                                         sess_config=sess_config)
 
@@ -566,7 +580,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
             print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
 
         if horovod:
-            loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))
+            loss_avg = hvd.allreduce(ensure_type(loss, tf.float32))
         else:
             loss_avg = tf.identity(loss)
 
@@ -599,9 +613,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         else:
             iou_avg = tf.identity(iou_op)
 
-        with tf.device('/device:GPU:0'):
-            mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
-                              tf.contrib.memory_stats.BytesLimit() ]
+        if "gpu" in device.lower():
+            with tf.device(device):
+                mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
+                                  tf.contrib.memory_stats.BytesLimit() ]
 
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
@@ -699,7 +714,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                                                     lr],
                                                    feed_dict={handle: trn_handle})
                     t_inst_end = time.time()
-                    mem_used = sess.run(mem_usage_ops)
+                    if "gpu" in device.lower():
+                        mem_used = sess.run(mem_usage_ops)
+                    else:
+                        mem_used = [0, 0]
                     train_steps += 1
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
@@ -713,7 +731,10 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
                     #print step report
                     eff_steps = train_steps_in_epoch if (train_steps_in_epoch > 0) else num_steps_per_epoch
                     if (train_steps % loss_print_interval) == 0:
-                        mem_used = sess.run(mem_usage_ops)
+                        if "gpu" in device.lower():
+                            mem_used = sess.run(mem_usage_ops)
+                        else:
+                            mem_used = [0, 0]
                         if per_rank_output:
                             print("REPORT: rank {}, training loss for step {} (of {}) is {}, time {:.3f}".format(comm_rank, train_steps, num_steps, train_loss, time.time()-start_time))
                         else:
@@ -811,7 +832,7 @@ if __name__ == '__main__':
     AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
-    AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
+    AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
@@ -832,7 +853,9 @@ if __name__ == '__main__':
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
-    AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss.")
+    AP.add_argument("--device", default="/device:gpu:0",help="Which device to count the allocated memory on.")
+    AP.add_argument("--data_format", default="channels_first",help="Which data format shall be picked [channels_first, channels_last].")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -847,9 +870,11 @@ if __name__ == '__main__':
         horovod = False
 
     #invoke main function
-    main(input_path_train=parsed.datadir_train,
+    main(device=parsed.device,
+         input_path_train=parsed.datadir_train,
          input_path_validation=parsed.datadir_validation,
          channels=parsed.channels,
+         data_format=parsed.data_format,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,

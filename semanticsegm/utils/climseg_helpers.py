@@ -282,7 +282,7 @@ smem = SharedExchangeBuffer(4, 128 << 20)
 
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods
-def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, sample_target, shared_slot):
+def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, data_format, sample_target, shared_slot):
     #begin_time = time.time()
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
@@ -303,6 +303,9 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         #do min/max normalization
         for c in range(len(channels)):
             data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
+
+        if data_format == "channels_last":
+            data = np.transpose(data, [1,2,0])
 
         #get label
         label = f['climate']['labels'][...]
@@ -344,12 +347,13 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 #input reader class
 class h5_input_reader(object):
     
-    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, sample_target=None):
+    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", sample_target=None):
         self.path = path
         self.channels = channels
         self.update_on_read = update_on_read
         self.dtype = dtype.as_numpy_dtype()
         self.weights = np.asarray(weights, dtype=self.dtype)
+        self.data_format = data_format
         self.sample_target = sample_target
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
@@ -370,7 +374,7 @@ class h5_input_reader(object):
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
-        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.sample_target, shared_slot))
+        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, shared_slot))
         if self.update_on_read:
             self.minvals = np.minimum(self.minvals, new_minvals)
             self.maxvals = np.maximum(self.maxvals, new_maxvals)
@@ -396,7 +400,7 @@ class h5_input_reader(object):
             #do min/max normalization
             for c in range(len(self.channels)):
                 data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-            
+
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
 

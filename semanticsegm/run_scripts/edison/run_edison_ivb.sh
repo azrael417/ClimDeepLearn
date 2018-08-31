@@ -11,14 +11,13 @@ module unload PrgEnv-intel
 module load PrgEnv-gnu
 module load gcc/7.1.0
 module load cray-hdf5
+module load python/3.6-anaconda-5.2
 source activate thorstendl-edison-2.7
 
 #openmp stuff
 export OMP_NUM_THREADS=12
 export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
-export CRAY_CUDA_MPS=0
-export MPICH_RDMA_ENABLED_CUDA=1
 
 #directories
 datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
@@ -46,4 +45,4 @@ cd ${run_dir}
 srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}
 
 #fp32 lag 1
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.001,gradient_lag=0 --model=resnet_v2_50 --scale_factor 0.1 --batch 1 --decoder=deconv1x |& tee out.fp32.lag1.${SLURM_JOBID}
+srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 24 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.001,gradient_lag=0 --model=resnet_v2_50 --scale_factor 0.1 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
