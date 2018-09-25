@@ -11,9 +11,9 @@
 module unload PrgEnv-intel
 module load PrgEnv-gnu
 module swap gcc gcc/7.1.0
-#module load python/3.6-anaconda-4.4
-#source activate thorstendl-cori-2.7
-module load tensorflow/intel-1.8.0-py27
+module load python/3.6-anaconda-4.4
+source activate thorstendl-cori-2.7-tf1.10
+#module load tensorflow/intel-1.8.0-py27
 
 #openmp stuff
 export OMP_NUM_THREADS=66
