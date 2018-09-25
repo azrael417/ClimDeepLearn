@@ -1,3 +1,4 @@
+
 # suppress warnings from earlier versions of h5py (imported by tensorflow)
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -61,8 +62,11 @@ from climseg_helpers import *
 import graph_flops
 
 #GLOBAL CONSTANTS
-image_height =  768
-image_width = 1152
+image_height_orig = 768
+image_width_orig = 1152
+downsampling_fact = 2
+image_height =  image_height_orig // downsampling_fact
+image_width = image_width_orig // downsampling_fact
 
 #arch specific
 _BATCH_NORM_DECAY = 0.9997
@@ -371,6 +375,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = dataset.shuffle(buffer_size=100)
     dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
+
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
@@ -487,12 +492,24 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
-                                                       ((batch, len(channels), image_height, image_width) if data_format=="channels_first" else (batch, image_height, image_width, len(channels)),
-                                                        (batch, image_height, image_width),
-                                                        (batch, image_height, image_width),
+                                                       ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
+                                                        (batch, image_height_orig, image_width_orig),
+                                                        (batch, image_height_orig, image_width_orig),
                                                         (batch))
                                                        )
         next_elem = iterator.get_next()
+
+        #if downsampling, do some preprocessing
+        if downsampling_fact != 1:
+            rand_select = tf.cast(tf.contrib.layers.one_hot_encoding(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), \
+                                                            downsampling_fact*downsampling_fact), tf.int32)
+            next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                        tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
+                                                                    [1, downsampling_fact, downsampling_fact, 1], \
+                                                                    [1, downsampling_fact, downsampling_fact, 1], \
+                                                                    [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                        tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', data_format), axis=-1), \
+                        next_elem[3])
 
         #create init handles
         #trn
@@ -506,7 +523,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
 
         #compute the input filter number based on number of channels used
         num_channels = len(channels)
-
         #set up model
         model = deeplab_v3_plus_generator(num_classes=3, output_stride=8,
                                           base_architecture=model,
@@ -518,18 +534,14 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
 
         logit, prediction = model(next_elem[0], True, dtype)
 
-        #logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz)
-
         #set up loss
         loss = None
 
         #cast the logits to fp32
         logit = ensure_type(logit, tf.float32)
-
         if loss_type == "weighted":
             #cast weights to FP32
             w_cast = ensure_type(next_elem[2], tf.float32)
-
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
                                                           weights=w_cast,
@@ -540,7 +552,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         elif loss_type == "weighted_mean":
             #cast weights to FP32
             w_cast = ensure_type(next_elem[2], tf.float32)
-
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
                                                           weights=w_cast,
@@ -554,7 +565,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             #cast to FP32
             labels_one_hot = ensure_type(labels_one_hot, tf.float32)
             loss = focal_loss(onehot_labels=labels_one_hot, logits=logit, alpha=1., gamma=2.)
-            
+
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
@@ -562,11 +573,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         if cluster_loss_weight > 0.0:
             loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
 
-
-        flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW",
-                                        batch=batch,
-                                        sess_config=sess_config)
-
+        flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
             print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
@@ -609,7 +616,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             with tf.device(device):
                 mem_usage_ops = [ tf.contrib.memory_stats.MaxBytesInUse(),
                                   tf.contrib.memory_stats.BytesLimit() ]
-
         #hooks
         #these hooks are essential. regularize the step hook by adding one additional step at the end
         hooks = [tf.train.StopAtStepHook(last_step=num_steps+1)]
@@ -630,25 +636,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             if not os.path.isdir(image_dir):
                 os.makedirs(image_dir)
 
-        ##DEBUG
-        ##summary
-        #if comm_rank == 0:
-        #    print("write graph for debugging")
-        #    tf.summary.scalar("loss",loss)
-        #    summary_op = tf.summary.merge_all()
-        #    #hooks.append(tf.train.SummarySaverHook(save_steps=num_steps_per_epoch, summary_writer=summary_writer, summary_op=summary_op))
-        #    with tf.Session(config=sess_config) as sess:
-        #        sess.run([init_op, init_local_op])
-        #        #create iterator handles
-        #        trn_handle = sess.run(trn_handle_string)
-        #        #init iterators
-        #        sess.run(trn_init_op, feed_dict={handle: trn_handle, datafiles: trn_data, labelfiles: trn_labels})
-        #        #summary:
-        #        sess.run(summary_op, feed_dict={handle: trn_handle})
-        #        #summary file writer
-        #        summary_writer = tf.summary.FileWriter('./logs', sess.graph)
-        ##DEBUG
-
+        #tracing
         if tracing is not None:
             import tracehook
             tracing_hook = tracehook.TraceHook(steps_to_trace=tracing,
@@ -660,7 +648,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         #  window average
         recent_losses = []
         loss_window_size = 10
-
         #start session
         with tf.train.MonitoredTrainingSession(config=sess_config, hooks=hooks) as sess:
             #initialize
@@ -676,9 +663,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             #init iterators
             sess.run(trn_init_op, feed_dict={handle: trn_handle})
             sess.run(val_init_op, feed_dict={handle: val_handle})
-
-            nvtx.RangePop() # TF Init
-
+            #nvtx.RangePop() # TF Init
             # figure out what step we're on (it won't be 0 if we are
             #  restoring from a checkpoint) so we can count from there
             train_steps = sess.run([global_step])[0]
@@ -691,14 +676,14 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             t_sustained_start = time.time()
             r_peak = 0
 
-            nvtx.RangePush("Training Loop", 4)
-            nvtx.RangePush("Epoch", epoch)
+            #nvtx.RangePush("Training Loop", 4)
+            #nvtx.RangePush("Epoch", epoch)
             start_time = time.time()
             while not sess.should_stop():
 
                 #training loop
                 try:
-                    nvtx.RangePush("Step", step)
+                    #nvtx.RangePush("Step", step)
                     #construct feed dict
                     t_inst_start = time.time()
                     _, tmp_loss, cur_lr = sess.run([train_op,
@@ -714,7 +699,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
                     train_loss = sum(recent_losses) / len(recent_losses)
-                    nvtx.RangePop() # Step
+                    #nvtx.RangePop() # Step
                     step += 1
 
                     r_inst = 1e-12 * flops / (t_inst_end-t_inst_start)
@@ -749,7 +734,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                         #evaluation loop
                         eval_loss = 0.
                         eval_steps = 0
-                        nvtx.RangePush("Eval Loop", 7)
+                        #nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
                                 #construct feed dict
@@ -759,7 +744,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                                                                                                                       next_elem[1],
                                                                                                                       next_elem[3]],
                                                                                                                       feed_dict={handle: val_handle})
-
                                 #print some images
                                 if comm_rank == 0 and not disable_imsave:
                                     if have_imsave:
@@ -774,7 +758,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                                                  +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(val_model_predictions[0,...],axis=2)*100,
                                                                                                  label=val_model_labels[0,...]*100,
                                                                                                  filename=val_model_filenames[0])
-
                                 eval_loss += tmp_loss
                                 eval_steps += 1
                             except tf.errors.OutOfRangeError:
@@ -795,21 +778,18 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                                 sess.run(iou_reset_op)
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
-                        nvtx.RangePop() # Eval Loop
+                        #nvtx.RangePop() # Eval Loop
 
                         #reset counters
                         epoch += 1
                         step = 0
                         t_sustained_start = time.time()
-
-                        nvtx.RangePop() # Epoch
-                        nvtx.RangePush("Epoch", epoch)
-
+                        #nvtx.RangePop() # Epoch
+                        #nvtx.RangePush("Epoch", epoch)
                 except tf.errors.OutOfRangeError:
                     break
-
-            nvtx.RangePop() # Epoch
-            nvtx.RangePop() # Training Loop
+            #nvtx.RangePop() # Epoch
+            #nvtx.RangePop() # Training Loop
 
         # write any cached traces to disk
         if tracing is not None:
