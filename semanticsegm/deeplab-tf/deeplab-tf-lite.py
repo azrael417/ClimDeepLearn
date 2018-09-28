@@ -353,7 +353,7 @@ def deeplab_v3_plus_generator(num_classes,
                             if decoder_fmt == 'NCHW':
                                 logits = tf.transpose(logits, [ 0, 2, 3, 1 ])
                         else:
-                            print 'ERROR: unknown decoder type:', decoder
+                            print('ERROR: unknown decoder type:', decoder)
                             assert False
                         sm_logits = tf.nn.softmax(logits, axis=-1)
 
@@ -501,14 +501,13 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
 
         #if downsampling, do some preprocessing
         if downsampling_fact != 1:
-            rand_select = tf.cast(tf.contrib.layers.one_hot_encoding(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), \
-                                                            downsampling_fact*downsampling_fact), tf.int32)
+            rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
             next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
                         tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
-                                                                    [1, downsampling_fact, downsampling_fact, 1], \
-                                                                    [1, downsampling_fact, downsampling_fact, 1], \
-                                                                    [1,1,1,1], 'VALID'), rand_select), axis=-1), \
-                        tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', data_format), axis=-1), \
+                                                                          [1, downsampling_fact, downsampling_fact, 1], \
+                                                                          [1, downsampling_fact, downsampling_fact, 1], \
+                                                                          [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                        tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
                         next_elem[3])
 
         #create init handles
@@ -576,7 +575,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
-            print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+            print('training flops: {:.3f} TF/step'.format(flops * 1e-12))
 
         if horovod:
             loss_avg = hvd.allreduce(ensure_type(loss, tf.float32))
