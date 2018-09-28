@@ -1,10 +1,12 @@
 #!/bin/bash
 #SBATCH -J climseg_horovod
-#SBATCH -t 02:00:00
+#SBATCH -t 04:00:00
 #SBATCH -A dasrepo
 #SBATCH -q regular
 #SBATCH -C knl
 #SBATCH -S 2
+
+##DW persistentdw name=DeepCAM
 
 
 #setting up stuff
@@ -20,11 +22,15 @@ export OMP_NUM_THREADS=66
 export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
+#debug
+export MKLDNN_VERBOSE=2
+
 #directories
 datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
-scratchdir=/dev/shm/$(whoami)
-numfiles_train=200
-numfiles_validation=10
+#scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
+scratchdir=/global/cscratch1/sd/tkurth/temp/tiramisu
+numfiles_train=1000
+numfiles_validation=100
 
 #create run dir
 run_dir=${WORK}/gb2018/tiramisu/runs/cori/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -45,6 +51,10 @@ cd ${run_dir}
 #run the training
 #stage in
 srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}
+#scratchdir=${datadir}
 
-#fp32 lag 1
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
+#fp32 lag 1, full
+#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
+
+#fp32 lag 1, lite
+srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 4 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.lite.fp32.lag1.${SLURM_JOBID}

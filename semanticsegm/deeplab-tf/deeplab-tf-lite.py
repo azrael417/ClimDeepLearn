@@ -355,7 +355,7 @@ def deeplab_v3_plus_generator(num_classes,
                         else:
                             print 'ERROR: unknown decoder type:', decoder
                             assert False
-                        sm_logits = tf.nn.softmax(logits)
+                        sm_logits = tf.nn.softmax(logits, axis=-1)
 
         return logits, sm_logits
 
