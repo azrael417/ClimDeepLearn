@@ -1,3 +1,7 @@
+
+
+
+
 #!/bin/bash
 
 #load python env
@@ -43,4 +47,19 @@ cd ${run_dir}
 
 #fp32 lag 1, lite
 lag=0
-python -u ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train --datadir_validation ${scratchdir}/validation --chkpt_dir checkpoint.fp32.lag${lag} --epochs 50 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} --model=resnet_v2_50 --scale_factor 1.0 --batch 2 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_first" |& tee out.lite.fp32.lag${lag}
+python -u ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train \
+                               --train_size 1000 \
+                               --datadir_validation ${scratchdir}/validation \
+                               --validation_size 300 \
+                               --channels 0 1 2 10 \
+                               --chkpt_dir checkpoint.fp32.lag${lag} \
+                               --epochs 20 \
+                               --fs local \
+                               --loss weighted_mean \
+                               --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
+                               --model=resnet_v2_50 \
+                               --scale_factor 1.0 \
+                               --batch 4 \
+                               --decoder=bilinear \
+                               --device "/device:cpu:0" \
+                               --data_format "channels_last" |& tee out.lite.fp32.lag${lag}

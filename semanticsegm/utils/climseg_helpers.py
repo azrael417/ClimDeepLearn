@@ -39,7 +39,7 @@ def focal_loss(onehot_labels, logits, alpha=0.25, gamma=2):
     weighted_onehot_labels = tf.multiply(onehot_labels,(1-pred)**gamma)
     #compute the product of logs, weights and reweights
     prod = -1. * tf.multiply(tf.multiply(weighted_onehot_labels, log_pred), alpha)
-    
+
     return tf.reduce_mean(tf.reduce_sum(prod,axis=3))
 
 
@@ -56,9 +56,9 @@ def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=No
         raise ValueError("Error, format {} not supported for cluster_loss.".format(data_format))
 
     #compute average over neighborhood and normalize
-    average_predictions = tf.nn.avg_pool(predictions, 
-                                         ksize=[1,ksize,ksize,1], 
-                                         strides=[1,1,1,1], 
+    average_predictions = tf.nn.avg_pool(predictions,
+                                         ksize=[1,ksize,ksize,1],
+                                         strides=[1,1,1,1],
                                          padding=padding,
                                          data_format=data_format,
                                          name=name)
@@ -67,7 +67,7 @@ def cluster_loss(predictions, ksize, padding="SAME", data_format="NHWC", name=No
 
     #compute scalar product across dim and reduce
     loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(norm_average_predictions,norm_predictions), axis=axis))
-    
+
     return loss
 
 
@@ -153,14 +153,14 @@ def get_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
         optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
-    
+
     #horovod wrapper
     if use_horovod:
         optim = hvd.DistributedOptimizer(optim)
 
     #return minimizer
     return optim.minimize(loss, global_step=global_step), learning_rate
-    
+
 
 #larc optimizer:
 def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
@@ -192,7 +192,7 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
 
     # instead of using the horovod wrapper, we do the allreduce ourselves below
-        
+
     #compute gradients
     grads_and_vars = optim.compute_gradients(loss)
     lag_ops = []
@@ -204,7 +204,7 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
                                     name=v.name.replace(":","_") + '_lag')
                 g_next = g
                 g = g_lag
-                                    
+
             if use_horovod and (hvd.size() > 1):
                 # if we ask for an average, it does a scalar divide, but
                 #  we can bake that into the scaling below
@@ -310,7 +310,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         #get label
         label = f['climate']['labels'][...]
 
-    #if new dataset is used, label has a batch index. 
+    #if new dataset is used, label has a batch index.
     #just take the first entry for the moment
     if label.ndim == 3:
         chan = np.random.randint(low=0, high=label.shape[0])
@@ -323,7 +323,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
     if label.dtype != np.int32:
         label = label.astype(np.int32)
-        
+
     if sample_target is not None:
         # determine the number of pixels in each of the three classes
         counts = np.histogram(label, bins=[0,1,2,3])[0]
@@ -346,7 +346,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 
 #input reader class
 class h5_input_reader(object):
-    
+
     def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", sample_target=None):
         self.path = path
         self.channels = channels
@@ -368,7 +368,7 @@ class h5_input_reader(object):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     pool = multiprocessing.Pool(processes=4)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
-    
+
     def read(self, datafile):
         path = os.path.join(self.path,datafile)
         #begin_time = time.time()
@@ -386,7 +386,7 @@ class h5_input_reader(object):
         return data, label, weights, path
 
     def sequential_read(self, datafile):
-        
+
         #data
         #begin_time = time.time()
         path = os.path.join(self.path,datafile)
@@ -431,19 +431,7 @@ def load_data(input_path, shuffle=True, max_files=-1, use_horovod=True):
     #PERMUTATION OF DATA
     if shuffle:
         np.random.seed(12345)
-        shufflefile = "./shuffle_indices.npy"
-        if not os.path.isfile(shufflefile):
-            shuffle_indices = np.random.permutation(len(files))
-            if use_horovod:
-                if hvd.rank() == 0:
-                    np.save(shufflefile,shuffle_indices)
-            else:
-                np.save(shufflefile,shuffle_indices)
-        else:
-            try:
-                shuffle_indices = np.load(shufflefile)
-            except:
-                shuffle_indices = np.random.permutation(len(files))
+        shuffle_indices = np.random.permutation(len(files))
         files = files[shuffle_indices]
 
     return files

@@ -65,9 +65,8 @@ class StoreDictKeyPair(argparse.Action):
 
 
 #main function
-def main(device, input_path_train, input_path_validation, channels, data_format, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, cluster_loss_weight, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(device, input_path_train, input_path_validation, channels, data_format, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
-    nvtx.RangePush("init horovod", 1)
     comm_rank = 0
     comm_local_rank = 0
     comm_size = 1
@@ -84,7 +83,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             comm_local_size = 1
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
-    nvtx.RangePop() # init horovod
 
     #parameters
     per_rank_output = False
@@ -123,7 +121,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         print("Loss type: {}".format(loss_type))
         print("Loss weights: {}".format(weights))
         print("Loss scale factor: {}".format(scale_factor))
-        print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
         #print optimizer parameters
         for k,v in optimizer.iteritems():
@@ -145,7 +142,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                                                        num_steps_per_epoch))
 
     with training_graph.as_default():
-        nvtx.RangePush("TF Init", 3)
         #create readers
         trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, sample_target=output_sampling)
         val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format)
@@ -236,10 +232,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #if cluster loss is enabled
-        if cluster_loss_weight > 0.0:
-            loss = loss + cluster_loss_weight * cluster_loss(prediction, 5, padding="SAME", data_format="NHWC", name="cluster_loss")
-
+        #determine flops
         flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
@@ -330,7 +323,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             #init iterators
             sess.run(trn_init_op, feed_dict={handle: trn_handle})
             sess.run(val_init_op, feed_dict={handle: val_handle})
-            #nvtx.RangePop() # TF Init
+
             # figure out what step we're on (it won't be 0 if we are
             #  restoring from a checkpoint) so we can count from there
             train_steps = sess.run([global_step])[0]
@@ -343,14 +336,12 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
             t_sustained_start = time.time()
             r_peak = 0
 
-            #nvtx.RangePush("Training Loop", 4)
-            #nvtx.RangePush("Epoch", epoch)
+            #start training
             start_time = time.time()
             while not sess.should_stop():
 
                 #training loop
                 try:
-                    #nvtx.RangePush("Step", step)
                     #construct feed dict
                     t_inst_start = time.time()
                     _, tmp_loss, cur_lr = sess.run([train_op,
@@ -366,7 +357,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                     train_steps_in_epoch = train_steps%num_steps_per_epoch
                     recent_losses = [ tmp_loss ] + recent_losses[0:loss_window_size-1]
                     train_loss = sum(recent_losses) / len(recent_losses)
-                    #nvtx.RangePop() # Step
                     step += 1
 
                     r_inst = 1e-12 * flops / (t_inst_end-t_inst_start)
@@ -401,7 +391,6 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                         #evaluation loop
                         eval_loss = 0.
                         eval_steps = 0
-                        #nvtx.RangePush("Eval Loop", 7)
                         while True:
                             try:
                                 #construct feed dict
@@ -445,18 +434,14 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
                                 sess.run(iou_reset_op)
                                 sess.run(val_init_op, feed_dict={handle: val_handle})
                                 break
-                        #nvtx.RangePop() # Eval Loop
 
                         #reset counters
                         epoch += 1
                         step = 0
                         t_sustained_start = time.time()
-                        #nvtx.RangePop() # Epoch
-                        #nvtx.RangePush("Epoch", epoch)
+
                 except tf.errors.OutOfRangeError:
                     break
-            #nvtx.RangePop() # Epoch
-            #nvtx.RangePop() # Training Loop
 
         # write any cached traces to disk
         if tracing is not None:
@@ -468,16 +453,14 @@ if __name__ == '__main__':
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
-    AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
+    AP.add_argument("--train_size",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
-    AP.add_argument("--cluster_loss_weight",default=0.0, type=float, help="Weight for cluster loss [0.0]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
     AP.add_argument("--fs",type=str,default="local",help="File system flag: global or local are allowed [local]")
-   # AP.add_argument("--optimizer",type=str,default="LARC-Adam",help="Optimizer flag: Adam, RMS, SGD are allowed. Prepend with LARC- to enable LARC [LARC-Adam]")
     AP.add_argument("--optimizer",action=StoreDictKeyPair)
     AP.add_argument("--model",type=str,default="resnet_v2_101",help="Pick base model [resnet_v2_50, resnet_v2_101].")
     AP.add_argument("--decoder",type=str,default="bilinear",help="Pick decoder [bilinear,deconv,deconv1x]")
@@ -517,10 +500,9 @@ if __name__ == '__main__':
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
-         trn_sz=parsed.trn_sz,
-         val_sz=parsed.val_sz,
+         trn_sz=parsed.train_size,
+         val_sz=parsed.validation_size,
          loss_type=parsed.loss,
-         cluster_loss_weight=parsed.cluster_loss_weight,
          model=parsed.model,
          decoder=parsed.decoder,
          fs_type=parsed.fs,

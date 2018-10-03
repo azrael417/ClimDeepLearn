@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 from tensorflow.contrib.framework import arg_scope
 from tensorflow.python.ops import array_ops
-from tensorflow.contrib.slim.nets import resnet_v2
+from tensorflow.contrib.slim.nets import resnet_v2, vgg
 from tensorflow.contrib.layers.python.layers import layers
 from tensorflow.contrib import layers as layers_lib
 
@@ -13,7 +13,7 @@ _BATCH_NORM_DECAY = 0.9997
 _WEIGHT_DECAY = 5e-4
 
 #atruous spatial pyramid pooling
-def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_training, depth=256):
+def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_training, depth=256, model_arg_scope=resnet_v2.resnet_arg_scope):
     """Atrous Spatial Pyramid Pooling.
     Args:
       inputs: A tensor of size [batch, height, width, channels].
@@ -34,7 +34,7 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, batch_norm_decay, is_t
         if output_stride == 8:
             atrous_rates = [2*rate for rate in atrous_rates]
 
-        with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+        with tf.contrib.slim.arg_scope(model_arg_scope(batch_norm_decay=batch_norm_decay)):
             with arg_scope([layers.batch_norm], is_training=is_training):
                 inputs_size = tf.shape(inputs)[1:3]
                 # (a) one 1x1 convolution and three 3x3 convolutions with rates = (6, 12, 18) when output stride = 16.
@@ -94,13 +94,14 @@ def deeplab_v3_plus_generator(num_classes,
     if batch_norm_decay is None:
         batch_norm_decay = _BATCH_NORM_DECAY
 
-    if base_architecture not in ['resnet_v2_50', 'resnet_v2_101']:
-        raise ValueError("'base_architrecture' must be either 'resnet_v2_50' or 'resnet_v2_50'.")
-
+    model_arg_scope = resnet_v2.resnet_arg_scope
     if base_architecture == 'resnet_v2_50':
         base_model = resnet_v2.resnet_v2_50
-    else:
+    elif base_architecture == 'resnet_v2_101':
         base_model = resnet_v2.resnet_v2_101
+    else:
+        raise ValueError("'base_architrecture' {ba} not supported.".format(ba=base_architecture))
+
 
     base_architecture = 'getter_scope/' + base_architecture
 
@@ -136,7 +137,7 @@ def deeplab_v3_plus_generator(num_classes,
 
         # tf.logging.info('net shape: {}'.format(inputs.shape))
         # encoder
-        with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+        with tf.contrib.slim.arg_scope(model_arg_scope(batch_norm_decay=batch_norm_decay)):
             logits, end_points = base_model(inputs,
                                             num_classes=None,
                                             is_training=is_training,
@@ -151,7 +152,7 @@ def deeplab_v3_plus_generator(num_classes,
 
         inputs_size = tf.shape(inputs)[1:3]
         net = end_points[base_architecture + '/block4']
-        encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training)
+        encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training, model_arg_scope=model_arg_scope)
 
         if data_format == "channels_last":
             decoder_fmt = 'NHWC'
@@ -161,7 +162,7 @@ def deeplab_v3_plus_generator(num_classes,
             ch_axis = 1
 
         with tf.variable_scope("decoder"):
-            with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
+            with tf.contrib.slim.arg_scope(model_arg_scope(batch_norm_decay=batch_norm_decay)):
                 with arg_scope([layers.batch_norm], is_training=is_training):
                     with tf.variable_scope("low_level_features"):
                         low_level_features = end_points[base_architecture + '/block1/unit_3/bottleneck_v2/conv1']
