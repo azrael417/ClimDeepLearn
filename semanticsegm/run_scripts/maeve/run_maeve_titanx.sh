@@ -21,6 +21,7 @@ datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
 scratchdir=${datadir}
 numfiles_train=1500
 numfiles_validation=300
+numfiles_test=500
 
 #create run dir
 run_dir=/data1/tkurth/tiramisu/runs/run_5
@@ -45,21 +46,43 @@ cd ${run_dir}
 #fp32 lag 1, full
 #srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
 
-#fp32 lag 1, lite
+#some parameters
 lag=0
-python -u ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train \
-                               --train_size ${numfiles_train} \
-                               --datadir_validation ${scratchdir}/validation \
-                               --validation_size ${numfiles_validation} \
-                               --channels 0 1 2 10 \
-                               --chkpt_dir checkpoint.fp32.lag${lag} \
-                               --epochs 20 \
-                               --fs local \
-                               --loss weighted_mean \
-                               --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
-                               --model=resnet_v2_50 \
-                               --scale_factor 1.0 \
-                               --batch 4 \
-                               --decoder=bilinear \
-                               --device "/device:cpu:0" \
-                               --data_format "channels_last" |& tee out.lite.fp32.lag${lag}
+train=0
+test=1
+
+if [ ${train} -eq 1 ]; then
+  echo "Starting Training"
+  python -u ./deeplab-tf-lite-train.py --datadir_train ${scratchdir}/train \
+                                       --train_size ${numfiles_train} \
+                                       --datadir_validation ${scratchdir}/validation \
+                                       --validation_size ${numfiles_validation} \
+                                       --channels 0 1 2 10 \
+                                       --chkpt_dir checkpoint.fp32.lag${lag} \
+                                       --epochs 20 \
+                                       --fs local \
+                                       --loss weighted_mean \
+                                       --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
+                                       --model=resnet_v2_50 \
+                                       --scale_factor 1.0 \
+                                       --batch 4 \
+                                       --decoder=bilinear \
+                                       --device "/device:cpu:0" \
+                                       --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train
+fi
+
+if [ ${test} -eq 1 ]; then
+  echo "Starting Testing"
+  python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
+                                           --test_size ${numfiles_test} \
+                                           --channels 0 1 2 10 \
+                                           --chkpt_dir checkpoint.fp32.lag${lag} \
+                                           --fs local \
+                                           --loss weighted_mean \
+                                           --model=resnet_v2_50 \
+                                           --scale_factor 1.0 \
+                                           --batch 4 \
+                                           --decoder=bilinear \
+                                           --device "/device:cpu:0" \
+                                           --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test
+fi
