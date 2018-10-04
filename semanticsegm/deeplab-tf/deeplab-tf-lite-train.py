@@ -65,7 +65,7 @@ class StoreDictKeyPair(argparse.Action):
 
 
 #main function
-def main(device, input_path_train, input_path_validation, channels, data_format, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(device, input_path_train, input_path_validation, channels, data_format, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, model, decoder, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
@@ -449,9 +449,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--lr",default=1e-4,type=float,help="Learning rate")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
-    AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--train_size",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
@@ -473,7 +471,6 @@ if __name__ == '__main__':
     AP.add_argument("--disable_horovod",action='store_true',help="Flag to disable horovod")
     AP.add_argument("--tracing",type=str,help="Steps or range of steps to trace")
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
-    AP.add_argument("--gradient-lag",type=int,default=0,help="Steps to lag gradient updates")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss.")
     AP.add_argument("--device", default="/device:gpu:0",help="Which device to count the allocated memory on.")
@@ -511,7 +508,6 @@ if __name__ == '__main__':
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
          dtype=dtype,
-         chkpt=parsed.chkpt,
          disable_checkpoints=parsed.disable_checkpoints,
          disable_imsave=parsed.disable_imsave,
          tracing=parsed.tracing,

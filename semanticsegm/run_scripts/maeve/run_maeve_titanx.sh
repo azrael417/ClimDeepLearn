@@ -19,11 +19,11 @@ export CUDA_VISIBLE_DEVICES=0
 datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=${datadir}
-numfiles_train=1000
-numfiles_validation=100
+numfiles_train=1500
+numfiles_validation=300
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/run_4
+run_dir=/data1/tkurth/tiramisu/runs/run_5
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -48,9 +48,9 @@ cd ${run_dir}
 #fp32 lag 1, lite
 lag=0
 python -u ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train \
-                               --train_size 1000 \
+                               --train_size ${numfiles_train} \
                                --datadir_validation ${scratchdir}/validation \
-                               --validation_size 300 \
+                               --validation_size ${numfiles_validation} \
                                --channels 0 1 2 10 \
                                --chkpt_dir checkpoint.fp32.lag${lag} \
                                --epochs 20 \
