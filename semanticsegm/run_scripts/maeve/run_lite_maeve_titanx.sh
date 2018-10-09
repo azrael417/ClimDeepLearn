@@ -2,7 +2,6 @@
 
 
 
-
 #!/bin/bash
 
 #load python env
@@ -25,7 +24,7 @@ numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/test_run_nn256_np1536_j143026_convergence
+run_dir=/data1/tkurth/tiramisu/runs/run_5
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -34,8 +33,8 @@ cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
 cp ../../utils/climseg_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-train.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-inference.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-lite.py ${run_dir}/
 cp ../../deeplab-tf/model.py ${run_dir}/
 cp ../../deeplab-tf/model_helpers.py ${run_dir}/
 
@@ -58,32 +57,34 @@ if [ ${train} -eq 1 ]; then
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
-                                       --chkpt_dir checkpoint.fp16.lag${lag} \
+                                       --downsampling 2 \
+                                       --channels 0 1 2 10 \
+                                       --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 20 \
                                        --fs local \
                                        --loss weighted_mean \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                        --model=resnet_v2_50 \
                                        --scale_factor 1.0 \
-                                       --batch 2 \
-                                       --decoder deconv1x \
+                                       --batch 4 \
+                                       --decoder=bilinear \
                                        --device "/device:cpu:0" \
-                                       --dtype float16 \
-                                       --data_format "channels_last" |& tee out.fp16.lag${lag}.train
+                                       --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train
 fi
 
 if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
-                                           --chkpt_dir checkpoint.fp16.lag${lag} \
-                                           --output output_test \
+                                           --test_size ${numfiles_test} \
+                                           --downsampling 2 \
+                                           --channels 0 1 2 10 \
+                                           --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --fs local \
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \
                                            --scale_factor 1.0 \
-                                           --batch 2 \
-                                           --decoder deconv1x \
+                                           --batch 4 \
+                                           --decoder=bilinear \
                                            --device "/device:cpu:0" \
-                                           --dtype float16 \
-                                           --data_format "channels_last" |& tee out.fp16.lag${lag}.test
+                                           --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test
 fi

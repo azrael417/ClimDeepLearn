@@ -282,7 +282,7 @@ smem = SharedExchangeBuffer(4, 128 << 20)
 
 # defined outside of the h5_input_reader class due to weirdness with pickling
 #  class methods
-def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, data_format, sample_target, shared_slot):
+def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, update_on_read, dtype, data_format, sample_target, label_id, shared_slot):
     #begin_time = time.time()
     with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
         #get min and max values and update stored values
@@ -313,8 +313,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
     #if new dataset is used, label has a batch index.
     #just take the first entry for the moment
     if label.ndim == 3:
-        chan = np.random.randint(low=0, high=label.shape[0])
-        #chan = 0
+        chan = label_id if label_id else np.random.randint(low=0, high=label.shape[0])
         label = label[chan,:,:]
 
     # cast data and labels if needed
@@ -347,7 +346,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
 #input reader class
 class h5_input_reader(object):
 
-    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", sample_target=None):
+    def __init__(self, path, channels, weights, dtype, normalization_file=None, update_on_read=False, data_format="channels_first", label_id=None, sample_target=None):
         self.path = path
         self.channels = channels
         self.update_on_read = update_on_read
@@ -355,6 +354,7 @@ class h5_input_reader(object):
         self.weights = np.asarray(weights, dtype=self.dtype)
         self.data_format = data_format
         self.sample_target = sample_target
+        self.label_id = label_id
         if normalization_file:
              with h5.File(self.path+'/'+normalization_file, "r", libver="latest") as f:
                  # stats order is mean, max, min, stddev
@@ -374,7 +374,7 @@ class h5_input_reader(object):
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
-        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, shared_slot))
+        data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, self.label_id, shared_slot))
         if self.update_on_read:
             self.minvals = np.minimum(self.minvals, new_minvals)
             self.maxvals = np.maximum(self.maxvals, new_maxvals)

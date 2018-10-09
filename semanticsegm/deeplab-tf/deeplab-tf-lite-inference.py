@@ -1,4 +1,3 @@
-
 # suppress warnings from earlier versions of h5py (imported by tensorflow)
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -41,18 +40,18 @@ from climseg_helpers import *
 #GLOBAL CONSTANTS
 image_height_orig = 768
 image_width_orig = 1152
-downsampling_fact = 2
-image_height =  image_height_orig // downsampling_fact
-image_width = image_width_orig // downsampling_fact
-
 
 #main function
-def main(device, input_path_test, channels, data_format, weights, image_dir, checkpoint_dir, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
+def main(device, input_path_test, downsampling_fact, channels, data_format, weights, image_dir, checkpoint_dir, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
     comm_size = 1
     comm_local_size = 1
+
+    #downsampling? recompute image dimensions
+    image_height =  image_height_orig // downsampling_fact
+    image_width = image_width_orig // downsampling_fact
 
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=2, #1
@@ -66,7 +65,7 @@ def main(device, input_path_test, channels, data_format, weights, image_dir, che
     test_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    tst_data = load_data(input_path_test, True, test_sz, False)
+    tst_data = load_data(input_path_test, True, tst_sz, False)
     if comm_rank == 0:
         print("Shape of tst_data is {}".format(tst_data.shape[0]))
         print("done.")
@@ -191,6 +190,10 @@ def main(device, input_path_test, channels, data_format, weights, image_dir, che
         init_op =  tf.global_variables_initializer()
         init_local_op = tf.local_variables_initializer()
 
+        #create image dir if not exists
+        if not os.path.isdir(image_dir):
+            os.makedirs(image_dir)
+
         #start session
         with tf.Session(config=sess_config) as sess:
             #initialize
@@ -216,29 +219,27 @@ def main(device, input_path_test, channels, data_format, weights, image_dir, che
                                                                                                           feed_dict={handle: tst_handle})
                     #print some images
                     if have_imsave:
-                        imsave(image_dir+'/test_pred_epoch'+str(epoch)+'_estep'
-                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', np.argmax(tst_model_predictions[0,...],axis=2)*100)
-                        imsave(image_dir+'/test_label_epoch'+str(epoch)+'_estep'
+                        imsave(image_dir+'/test_pred_estep'
+                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', np.argmax(tst_model_predictions[0,...],axis=-1)*100)
+                        imsave(image_dir+'/test_label_estep'
                                +str(eval_steps)+'_rank'+str(comm_rank)+'.png', tst_model_labels[0,...]*100)
-                        imsave(image_dir+'/test_combined_epoch'+str(epoch)+'_estep'
-                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', plot_colormap[tst_model_labels[0,...],np.argmax(tst_model_predictions[0,...],axis=2)])
+                        imsave(image_dir+'/test_combined_estep'
+                               +str(eval_steps)+'_rank'+str(comm_rank)+'.png', plot_colormap[tst_model_labels[0,...],np.argmax(tst_model_predictions[0,...],axis=-1)])
                     else:
-                        np.savez(image_dir+'/test_epoch'+str(epoch)+'_estep'
-                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(sts_model_predictions[0,...],axis=2)*100,
-                                                                                                 label=tst_model_labels[0,...]*100,
+                        np.savez(image_dir+'/test_estep'
+                                 +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(tst_model_predictions[...],axis=-1)*100,
+                                                                                                 label=tst_model_labels[...]*100,filename=tst_model_filenames[0])
 
-                    #update loss                                                                             filename=tst_model_filenames[0])
+                    #update loss
                     eval_loss += tmp_loss
                     eval_steps += 1
 
                 except tf.errors.OutOfRangeError:
                     eval_steps = np.max([eval_steps,1])
                     eval_loss /= eval_steps
-                    print("COMPLETED: evaluation loss for epoch {} (of {}) is {}".format(epoch, num_epochs, eval_loss))
-                    iou_score = sess.run(iou_avg)
-                    print("COMPLETED: evaluation IoU for epoch {} (of {}) is {}".format(epoch, num_epochs, iou_score))
-                    sess.run(iou_reset_op)
-                    sess.run(val_init_op, feed_dict={handle: val_handle})
+                    print("COMPLETED: evaluation loss is {}".format(eval_loss))
+                    iou_score = sess.run(iou_op)
+                    print("COMPLETED: evaluation IoU is {}".format(iou_score))
                     break
 
 if __name__ == '__main__':
@@ -247,6 +248,7 @@ if __name__ == '__main__':
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--downsampling",default=1,type=int, nargs=1,help="Downsampling factor for image resolution reduction.")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_test",type=str,help="Path to test data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
@@ -268,13 +270,10 @@ if __name__ == '__main__':
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
 
-    #check if we want horovod to be disabled
-    if parsed.disable_horovod:
-        horovod = False
-
     #invoke main function
     main(device=parsed.device,
          input_path_test=parsed.datadir_test,
+         downsampling_fact=parsed.downsampling,
          channels=parsed.channels,
          data_format=parsed.data_format,
          weights=weights,
