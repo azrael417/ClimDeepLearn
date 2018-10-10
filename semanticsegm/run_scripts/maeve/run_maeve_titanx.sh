@@ -1,8 +1,3 @@
-
-
-
-
-
 #!/bin/bash
 
 #load python env
@@ -17,7 +12,8 @@ export OMP_PROC_BIND=spread
 export CUDA_VISIBLE_DEVICES=0
 
 #directories
-datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
+#datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
+datadir=/data1/tkurth/tiramisu/segm_h5_v3_old
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=${datadir}
 numfiles_train=1500
@@ -76,6 +72,7 @@ if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
                                            --chkpt_dir checkpoint.fp16.lag${lag} \
+					   --output_graph inference.pb \
                                            --output output_test \
                                            --fs local \
                                            --loss weighted_mean \

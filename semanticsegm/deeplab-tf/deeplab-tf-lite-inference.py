@@ -42,7 +42,7 @@ image_height_orig = 768
 image_width_orig = 1152
 
 #main function
-def main(device, input_path_test, downsampling_fact, channels, data_format, weights, image_dir, checkpoint_dir, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
+def main(device, input_path_test, downsampling_fact, channels, data_format, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
@@ -194,6 +194,7 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, weig
         if not os.path.isdir(image_dir):
             os.makedirs(image_dir)
 
+
         #start session
         with tf.Session(config=sess_config) as sess:
             #initialize
@@ -205,9 +206,18 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, weig
             #init iterators
             sess.run(tst_init_op, feed_dict={handle: tst_handle})
 
+            #remove training nodes
+            if output_graph_file:
+                print("Storing inference graph to {}.".format(output_graph_file))
+                inference_graph_def = tf.graph_util.remove_training_nodes(sess.graph_def, protected_nodes=None)
+                #save the inference graph
+                with open(output_graph_file, 'wb') as ogf:
+                    ogf.write(inference_graph_def.SerializeToString())
+
             #start inference
             eval_loss = 0.
             eval_steps = 0
+            print("Starting evaluation on test set")
             while True:
                 try:
                     #construct feed dict
@@ -228,7 +238,7 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, weig
                     else:
                         np.savez(image_dir+'/test_estep'
                                  +str(eval_steps)+'_rank'+str(comm_rank)+'.npz', prediction=np.argmax(tst_model_predictions[...],axis=-1)*100,
-                                                                                                 label=tst_model_labels[...]*100,filename=tst_model_filenames[0])
+                                                                                                 label=tst_model_labels[...]*100, filename=tst_model_filenames)
 
                     #update loss
                     eval_loss += tmp_loss
@@ -246,6 +256,7 @@ if __name__ == '__main__':
     AP = argparse.ArgumentParser()
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
+    AP.add_argument("--output_graph",type=str,default=None,help="FIlename of the compressed inference graph.")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--downsampling",default=1,type=int, nargs=1,help="Downsampling factor for image resolution reduction.")
@@ -279,6 +290,7 @@ if __name__ == '__main__':
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
+         output_graph_file=parsed.output_graph,
          tst_sz=parsed.test_size,
          loss_type=parsed.loss,
          model=parsed.model,
