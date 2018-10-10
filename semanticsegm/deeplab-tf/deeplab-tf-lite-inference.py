@@ -259,7 +259,7 @@ if __name__ == '__main__':
     AP.add_argument("--output_graph",type=str,default=None,help="FIlename of the compressed inference graph.")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
-    AP.add_argument("--downsampling",default=1,type=int, nargs=1,help="Downsampling factor for image resolution reduction.")
+    AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_test",type=str,help="Path to test data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")

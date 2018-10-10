@@ -24,7 +24,7 @@ numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/run_5
+run_dir=/data1/tkurth/tiramisu/runs/run_6
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -33,8 +33,8 @@ cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
 cp ../../utils/climseg_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-lite-train.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-lite-inference.py ${run_dir}/
 cp ../../deeplab-tf/model.py ${run_dir}/
 cp ../../deeplab-tf/model_helpers.py ${run_dir}/
 
@@ -48,8 +48,8 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=0
-test=1
+train=1
+test=0
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
@@ -79,6 +79,8 @@ if [ ${test} -eq 1 ]; then
                                            --downsampling 2 \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
+					   --output_graph deepcam_inference.pb \
+					   --output output_test \
                                            --fs local \
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \

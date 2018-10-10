@@ -455,7 +455,7 @@ if __name__ == '__main__':
     AP.add_argument("--train_size",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
-    AP.add_argument("--downsampling",default=1,type=int, nargs=1,help="Downsampling factor for image resolution reduction.")
+    AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
@@ -494,7 +494,7 @@ if __name__ == '__main__':
     main(device=parsed.device,
          input_path_train=parsed.datadir_train,
          input_path_validation=parsed.datadir_validation,
-         downsample_fact=parsed.downsampling,
+         downsampling_fact=parsed.downsampling,
          channels=parsed.channels,
          data_format=parsed.data_format,
          weights=weights,

@@ -72,7 +72,7 @@ if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
                                            --chkpt_dir checkpoint.fp16.lag${lag} \
-					   --output_graph inference.pb \
+					   --output_graph deepcam_inference.pb \
                                            --output output_test \
                                            --fs local \
                                            --loss weighted_mean \
