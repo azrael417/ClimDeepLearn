@@ -219,7 +219,7 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
             larc_local_lr = control_flow_ops.cond(
                 pred = math_ops.logical_and( math_ops.not_equal(v_norm, tf.constant(0.0)),
                                             math_ops.not_equal(g_norm, tf.constant(0.0)) ),
-                                            true_fn = lambda: (LARC_eta * g_scale) * v_norm / g_norm,
+                                            true_fn = lambda: (LARC_eta / g_scale) * v_norm / g_norm,
                                             false_fn = lambda: LARC_epsilon)
 
             if LARC_mode=="scale":
