@@ -42,7 +42,7 @@ image_height_orig = 768
 image_width_orig = 1152
 
 #main function
-def main(device, input_path_test, downsampling_fact, channels, data_format, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
+def main(device, input_path_test, downsampling_fact, channels, data_format, label_id, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
@@ -65,7 +65,7 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, weig
     test_graph = tf.Graph()
     if comm_rank == 0:
         print("Loading data...")
-    tst_data = load_data(input_path_test, True, tst_sz, False)
+    tst_data = load_data(input_path_test, shuffle=False, max_files=tst_sz, use_horovod=False)
     if comm_rank == 0:
         print("Shape of tst_data is {}".format(tst_data.shape[0]))
         print("done.")
@@ -94,7 +94,7 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, weig
 
     with test_graph.as_default():
         #create readers
-        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format)
+        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, label_id=label_id)
         #create datasets
         if fs_type == "local":
             tst_dataset = create_dataset(tst_reader, tst_data, batch, 1, comm_local_size, comm_local_rank, dtype, shuffle=False)
@@ -272,6 +272,9 @@ if __name__ == '__main__':
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss.")
     AP.add_argument("--device", default="/device:gpu:0",help="Which device to count the allocated memory on.")
     AP.add_argument("--data_format", default="channels_first",help="Which data format shall be picked [channels_first, channels_last].")
+    AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
+                    where each channel presents a different label (e.g. for fuzzy labels). \
+                    If set to None, the selection will be randomized [None].")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -287,6 +290,7 @@ if __name__ == '__main__':
          downsampling_fact=parsed.downsampling,
          channels=parsed.channels,
          data_format=parsed.data_format,
+         label_id=parsed.label_id,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,

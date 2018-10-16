@@ -278,6 +278,7 @@ class SharedExchangeBuffer(object):
             results.append(view[...])
         return tuple(results)
 
+#global shared memory buffer
 smem = SharedExchangeBuffer(4, 128 << 20)
 
 # defined outside of the h5_input_reader class due to weirdness with pickling
@@ -366,11 +367,11 @@ class h5_input_reader(object):
 
     # suppress SIGINT when we launch pool so ^C's go to main process
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    pool = multiprocessing.Pool(processes=4)
+    pool = multiprocessing.Pool(processes=1) #DEBUG, should be 1
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     def read(self, datafile):
-        path = os.path.join(self.path,datafile)
+        path = os.path.join(self.path, datafile)
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
@@ -386,7 +387,6 @@ class h5_input_reader(object):
         return data, label, weights, path
 
     def sequential_read(self, datafile):
-
         #data
         #begin_time = time.time()
         path = os.path.join(self.path,datafile)
@@ -401,13 +401,39 @@ class h5_input_reader(object):
             for c in range(len(self.channels)):
                 data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
 
+            if self.data_format == "channels_last":
+                data = np.transpose(data, [1,2,0])
+                
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
 
-            #get weights
-            weights = np.zeros(label.shape, dtype=np.float32)
-            for idx,w in enumerate(self.weights):
-                weights[np.where(label==idx)]=w
+
+        #if new dataset is used, label has a batch index.
+        #just take the first entry for the moment
+        if label.ndim == 3:
+            chan = label_id if label_id else np.random.randint(low=0, high=label.shape[0])
+            label = label[chan,:,:]
+            
+        # cast data and labels if needed
+        if data.dtype != self.dtype:
+            data = data.astype(self.dtype)
+        
+        if label.dtype != np.int32:
+            label = label.astype(np.int32)
+            
+        if self.sample_target is not None:
+            # determine the number of pixels in each of the three classes
+            counts = np.histogram(label, bins=[0,1,2,3])[0]
+            # assign a per-class probability that delivers the target number of
+            #  pixels of each class (in expectation) in the mask
+            prob = float(self.sample_target) / counts
+            # randomly select actual pixels to include in the loss function on
+            #  this step
+            r = np.random.uniform(size=label.shape)
+            weights = (r < prob[label]).astype(dtype)
+        else:
+            #get weights - choose per-channel based on the labels
+            weights = self.weights[label]
 
         #time
         #end_time = time.time()

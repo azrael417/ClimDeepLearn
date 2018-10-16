@@ -9,7 +9,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=2
 
 #directories
 #datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
@@ -65,6 +65,7 @@ if [ ${train} -eq 1 ]; then
                                        --decoder deconv1x \
                                        --device "/device:cpu:0" \
                                        --dtype float16 \
+				       --label_id 0 \
                                        --data_format "channels_last" |& tee out.fp16.lag${lag}.train
 fi
 
@@ -72,8 +73,9 @@ if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
                                            --chkpt_dir checkpoint.fp16.lag${lag} \
+					   --test_size 100 \
 					   --output_graph deepcam_inference.pb \
-                                           --output output_test \
+                                           --output output_test_debug \
                                            --fs local \
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \
@@ -82,5 +84,6 @@ if [ ${test} -eq 1 ]; then
                                            --decoder deconv1x \
                                            --device "/device:cpu:0" \
                                            --dtype float16 \
+					   --label_id 0 \
                                            --data_format "channels_last" |& tee out.fp16.lag${lag}.test
 fi
