@@ -265,7 +265,7 @@ class SharedExchangeBuffer(object):
             #print 'packing', a.dtype, a.shape
             view = np.frombuffer(self.arrays[slot], dtype=a.dtype, count=a.size, offset=ofs).reshape(a.shape)
             ofs += a.nbytes
-            view[...] = a
+            view[...] = a[...]
         return tuple((a.dtype, a.size, a.shape) for a in args)
 
     def unpack_arrays(self, slot, *args):
@@ -275,7 +275,8 @@ class SharedExchangeBuffer(object):
             #print 'unpacking', a
             view = np.frombuffer(self.arrays[slot], dtype=a[0], count=a[1], offset=ofs).reshape(a[2])
             ofs += view.nbytes
-            results.append(view[...])
+            arr = view.copy()
+            results.append(arr)
         return tuple(results)
 
 #global shared memory buffer
@@ -367,7 +368,7 @@ class h5_input_reader(object):
 
     # suppress SIGINT when we launch pool so ^C's go to main process
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    pool = multiprocessing.Pool(processes=1) #DEBUG, should be 1
+    pool = multiprocessing.Pool(processes=4)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     def read(self, datafile):
