@@ -40,38 +40,51 @@ def plot_mask(lons, lats, img_array, storm_mask,fname):
 
 
 if __name__ == "__main__":
-   AP = argparse.ArgumentParser()
-   AP.add_argument("--datapath",type=str,default=None,required=True,help="Name path in which to find the datafiles belonging to labels and predictions")
-   AP.add_argument("--masks",type=str,default=None,required=True,help="Name of the masks file from which to pull labels or predicted labels. Assumed to be in npz")
-   AP.add_argument("--lat_lon",type=str,default="lat_lon.pkl",help="Name of the pkl file from which to pull lats and lons. Assumed to be in pkl")
-   parsed_args = AP.parse_args()
-   with open(parsed_args.lat_lon,'rb') as f:
-     lat_lon = pickle.load(f, encoding='latin1')
-   print("loaded lat and lon")
-   print(parsed_args.masks)
+  AP = argparse.ArgumentParser()
+  AP.add_argument("--datapath",type=str,default=None,required=True,help="Path in which to find the datafiles belonging to labels and predictions")
+  AP.add_argument("--maskpath",type=str,default=None,required=True,help="Path in which to find the mask files from which to pull labels or predicted labels. Assumed to be in npz.")
+  AP.add_argument("--outpath",type=str,default=None,required=True,help="Path in which to store the generated images")
+  AP.add_argument("--lat_lon",type=str,default="lat_lon.pkl",help="Name of the pkl file from which to pull lats and lons. Assumed to be in pkl")
+  parsed_args = AP.parse_args()
+  with open(parsed_args.lat_lon,'rb') as f:
+    lat_lon = pickle.load(f, encoding='latin1')
+  print("loaded lat and lon")
    
-   #load mask file
-   masks = np.load(parsed_args.masks)
+  #get all the maskfiles
+  maskfiles = [x for x in os.listdir(parsed_args.maskpath) if os.path.splitext(x)[1]==".npz"]
+  
+  if not maskfiles:
+    raise ValueError("Error, there are no npz files in path {}.".format(parsed_args.maskpath))
+  
+  #create output path
+  if not os.path.isdir(parsed_args.outpath):
+    os.makedirs(parsed_args.outpath)
+  
+  #load mask file
+  for maskfile in maskfiles:
+    masks = np.load(os.path.join(parsed_args.maskpath, maskfile))
    
-   #parse filenames
-   fnames = [os.path.basename(x) for x in masks['filename']]
+    #parse filenames
+    fnames = [os.path.basename(x) for x in masks['filename']]
    
-   #grab the data from the standard path
-   for idx,fname in enumerate(fnames):
-     print(fname)
-     with h5.File(os.path.join(parsed_args.datapath, fname), "r") as f:
-       data = f["climate"]["data"][...]
-       labels = f["climate"]["labels"][...]
-       
-       print(labels.shape)
-       
-     #do sanity checks
-     print(np.linalg.norm(masks["label"][idx,...]-labels*100))
+    #grab the data from the standard path
+    for idx,fname in enumerate(fnames):
+      with h5.File(os.path.join(parsed_args.datapath, fname), "r") as f:
+        data = f["climate"]["data"][...]
+        labels = f["climate"]["labels"][...]
+
+      #do sanity checks
+      if np.linalg.norm(masks["label"][idx,...]-labels*100) > 0.0001:
+        print("Error, label inconsistencies detected between {npzf} and {h5f} files.".format(npzf=maskfile,h5f=fname))
+        continue
      
-     #import IPython; IPython.embed()     
-   
-     #TMQ = data['climate']['data'][0]
-   #plot_mask(lat_lon['lon'],lat_lon['lat'],TMQ,masks['prediction'],fname+"_tmq__prediction.png")
-   #plot_mask(lat_lon['lon'],lat_lon['lat'],TMQ,masks['label'],fname+"_tmq_label_tkurth.png")
-   #plot_mask(lat_lon['lon'],lat_lon['lat'],TMQ,labels['climate']['labels'],fname+"_tmq_label_amahesh.png")
-   #plot_mask(lat_lon['lon'],lat_lon['lat'],TMQ,data['climate']['labels'],fname+"_tmq_label_data.png")
+      #do the plotting
+      basename = os.path.join(parsed_args.outpath, os.path.splitext(fname)[0])
+      TMQ = data[0]
+      prediction = masks['prediction'][idx, ...]
+      label = masks['label'][idx, ...]
+      #plot TMQ prediction
+      plot_mask(lat_lon['lon'], lat_lon['lat'], TMQ, prediction, basename+"_tmq__prediction.png")
+      #plot TMQ tkurth prediction (whatever that is)
+      plot_mask(lat_lon['lon'], lat_lon['lat'],TMQ, label, basename+"_tmq_label_tkurth.png")
+
