@@ -1,3 +1,4 @@
+
 import tensorflow as tf
 from collections import defaultdict
 
@@ -38,7 +39,7 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
             #print o
             fmt = o.get_attr('data_format')
             if format != fmt:
-                print 'WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format)
+                print('WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format))
             strides = o.get_attr('strides')
             padding = o.get_attr('padding').lower()
             in_size = o.inputs[0].shape.as_list()
@@ -62,18 +63,18 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                       in_size[1] * channels_out * # channels in/out
                       filter_sz[0] * filter_sz[1])
             if verbose:
-                print "_CONV Input={} ChannelsOut={} Filters={} Stride={} Padding='{}' # {}".format(in_size,
+                print("_CONV Input={} ChannelsOut={} Filters={} Stride={} Padding='{}' # {}".format(in_size,
                                                                                                     channels_out,
                                                                                                     filter_sz,
                                                                                                     strides,
                                                                                                     padding,
-                                                                                                    o.name)
+                                                                                                    o.name))
         if o.type == 'Conv2DBackpropInput':
             #print o.name, o.inputs[2], o.inputs[1], o.outputs[0]
             fmt = o.get_attr('data_format')
             #assert(fmt == format)
             if format != fmt:
-                print 'WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format)
+                print('WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format))
             strides = o.get_attr('strides')
             padding = o.get_attr('padding').lower()
             in_size = o.inputs[2].shape.as_list()
@@ -97,42 +98,42 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                       in_size[1] * channels_out * # channels in/out
                       filter_sz[0] * filter_sz[1])
             if verbose:
-                print "_DECONV Input={} ChannelsOut={} Filters={} Stride={} Padding='{}' # {}".format(in_size,
+                print("_DECONV Input={} ChannelsOut={} Filters={} Stride={} Padding='{}' # {}".format(in_size,
                                                                                                       channels_out,
                                                                                                       filter_sz,
                                                                                                       strides,
                                                                                                       padding,
-                                                                                                      o.name)
+                                                                                                      o.name))
         if o.type == 'Relu':
             in_size = o.inputs[0].shape.as_list()
             if in_size[0] is None:
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
             else:
                 if in_size[0] != batch:
-                    print "WARNING: batch size appears to be {}, not {}".format(in_size[0],
-                                                                                batch)
+                    print("WARNING: batch size appears to be {}, not {}".format(in_size[0],
+                                                                                batch))
             if format == 'NCHW':
                 in_size = tuple(in_size)
             else:
                 in_size = tuple((in_size[0], in_size[3], in_size[1], in_size[2]))
             if verbose:
-                print "_RELU Input={} # {}".format(in_size,
-                                                   o.name)
+                print("_RELU Input={} # {}".format(in_size,
+                                                   o.name))
         if o.type in ('FusedBatchNorm', 'FusedBatchNormV2'):
             in_size = o.inputs[0].shape.as_list()
             if in_size[0] is None:
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
             else:
                 if in_size[0] != batch:
-                    print "WARNING: batch size appears to be {}, not {}".format(in_size[0],
-                                                                                batch)
+                    print("WARNING: batch size appears to be {}, not {}".format(in_size[0],
+                                                                                batch))
             if format == 'NCHW':
                 in_size = tuple(in_size)
             else:
                 in_size = tuple((in_size[0], in_size[3], in_size[1], in_size[2]))
             if verbose:
-                print "_BATCH_NORM Input={} axis=1 # {}".format(in_size,
-                                                                o.name)
+                print("_BATCH_NORM Input={} axis=1 # {}".format(in_size,
+                                                                o.name))
         if o.type == 'RealDiv':
             if o.name.endswith('/dropout/div'):
                 in_size = o.inputs[0].shape.as_list()
@@ -140,15 +141,15 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                     in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
                 else:
                     if in_size[0] != batch:
-                        print "WARNING: batch size appears to be {}, not {}".format(in_size[0],
-                                                                                batch)
+                        print("WARNING: batch size appears to be {}, not {}".format(in_size[0],
+                                                                                batch))
                 if format == 'NCHW':
                     in_size = tuple(in_size)
                 else:
                     in_size = tuple((in_size[0], in_size[3], in_size[1], in_size[2]))
                 if verbose:
-                    print "_DROPOUT Input={} # {}".format(in_size,
-                                                          o.name)
+                    print("_DROPOUT Input={} # {}".format(in_size,
+                                                          o.name))
                 continue
         if o.type == 'Softmax':
             #print o.name, o.inputs[0]
@@ -159,15 +160,15 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
             else:
                 if in_size[0] != batch:
-                    print "WARNING: batch size appears to be {}, not {}".format(in_size[0],
-                                                                                batch)
+                    print("WARNING: batch size appears to be {}, not {}".format(in_size[0],
+                                                                                batch))
             if format == 'NCHW':
                 in_size = tuple(in_size)
             else:
                 in_size = tuple((in_size[0], in_size[3], in_size[1], in_size[2]))
             if verbose:
-                print "_SOFTMAX Input={} # {}".format(in_size,
-                                                      o.name)
+                print("_SOFTMAX Input={} # {}".format(in_size,
+                                                      o.name))
         if o.type == 'ResizeBilinear':
             #print o.name, o.inputs[0], o.inputs[1], o.outputs[0]
             in_size = o.inputs[0].shape.as_list()
@@ -175,8 +176,8 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                 in_size = [ batch, in_size[1], in_size[2], in_size[3] ]
             else:
                 if in_size[0] != batch:
-                    print "WARNING: batch size appears to be {}, not {}".format(in_size[0],
-                                                                                batch)
+                    print("WARNING: batch size appears to be {}, not {}".format(in_size[0],
+                                                                                batch))
             if format == 'NCHW':
                 in_size = tuple(in_size)
             else:
@@ -197,8 +198,8 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
         flops *= 3
 
     if verbose:
-        print "# total {} FLOPS = {:f}".format(('training' if training else 'inference'),
-                                               flops)
+        print("# total {} FLOPS = {:f}".format(('training' if training else 'inference'),
+                                               flops))
     #for k in sorted(types):
     #    print k, types[k]
 

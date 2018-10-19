@@ -13,7 +13,7 @@ import os
 from scipy.misc import imsave
 import h5py as h5
 import pickle
-
+from tqdm import tqdm
 
 def plot_mask(lons, lats, img_array, storm_mask,fname):
   my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=np.median(lons),
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     os.makedirs(parsed_args.outpath)
   
   #load mask file
-  for maskfile in maskfiles:
+  for maskfile in tqdm(maskfiles):
     masks = np.load(os.path.join(parsed_args.maskpath, maskfile))
    
     #parse filenames

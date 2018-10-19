@@ -1,3 +1,4 @@
+
 import tensorflow as tf
 import numpy as np
 import h5py as h5
@@ -114,7 +115,7 @@ def get_learning_rate(optimizer, global_step, steps_per_epoch):
             global_epoch = tf.floordiv(global_step, steps_per_epoch)
             prev_scale = lambda: 1.0
             cases = []
-            for i in xrange(1,len(args),2):
+            for i in range(1,len(args),2):
                 epoch_cutoff = int(args[i])
                 cases.append((tf.less(global_epoch, epoch_cutoff),
                               prev_scale))
@@ -125,7 +126,7 @@ def get_learning_rate(optimizer, global_step, steps_per_epoch):
                                      default=prev_scale,
                                      exclusive=False)
         else:
-            print "ERROR: Unknown lr_decay mode:", lr_decay_mode
+            print("ERROR: Unknown lr_decay mode:", lr_decay_mode)
             exit(1)
 
     return learning_rate
@@ -250,8 +251,8 @@ class SharedExchangeBuffer(object):
     def __init__(self, count, size):
         self.count = count
         self.size = size
-        self.arrays = [ multiprocessing.RawArray('B', size) for x in xrange(count) ]
-        self.avail = set( xrange(count) )
+        self.arrays = [ multiprocessing.RawArray('B', size) for x in range(count) ]
+        self.avail = set( range(count) )
 
     def get_free_slot(self):
         return self.avail.pop()
@@ -372,6 +373,8 @@ class h5_input_reader(object):
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     def read(self, datafile):
+        if isinstance(datafile, bytes):
+            datafile = datafile.decode("utf-8")
         path = os.path.join(self.path, datafile)
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
@@ -404,7 +407,7 @@ class h5_input_reader(object):
 
             if self.data_format == "channels_last":
                 data = np.transpose(data, [1,2,0])
-                
+
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
 
@@ -414,14 +417,14 @@ class h5_input_reader(object):
         if label.ndim == 3:
             chan = label_id if label_id else np.random.randint(low=0, high=label.shape[0])
             label = label[chan,:,:]
-            
+
         # cast data and labels if needed
         if data.dtype != self.dtype:
             data = data.astype(self.dtype)
-        
+
         if label.dtype != np.int32:
             label = label.astype(np.int32)
-            
+
         if self.sample_target is not None:
             # determine the number of pixels in each of the three classes
             counts = np.histogram(label, bins=[0,1,2,3])[0]
@@ -453,7 +456,7 @@ def load_data(input_path, shuffle=True, max_files=-1, use_horovod=True):
         files = files[:max_files]
 
     #convert to numpy
-    files = np.asarray(files)
+    files = np.asarray(files, dtype=str)
 
     #PERMUTATION OF DATA
     if shuffle:

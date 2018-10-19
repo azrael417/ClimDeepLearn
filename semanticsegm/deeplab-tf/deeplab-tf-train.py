@@ -453,7 +453,7 @@ def main(device, input_path_train, input_path_validation, channels, data_format,
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
         #print optimizer parameters
-        for k,v in optimizer.iteritems():
+        for k,v in optimizer.items():
             print("Solver Parameters: {k}: {v}".format(k=k,v=v))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))

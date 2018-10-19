@@ -124,7 +124,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, cha
         print("Loss scale factor: {}".format(scale_factor))
         print("Output sampling target: {}".format(output_sampling))
         #print optimizer parameters
-        for k,v in optimizer.iteritems():
+        for k,v in optimizer.items():
             print("Solver Parameters: {k}: {v}".format(k=k,v=v))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
@@ -234,7 +234,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, cha
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
         #determine flops
-        flops = graph_flops.graph_flops(format='NHWC' if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
+        flops = graph_flops.graph_flops(format="NHWC" if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
             print('training flops: {:.3f} TF/step'.format(flops * 1e-12))

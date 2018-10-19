@@ -12,9 +12,9 @@
 #setting up stuff
 module unload PrgEnv-intel
 module load PrgEnv-gnu
-module swap gcc gcc/7.1.0
 module load python/3.6-anaconda-4.4
-source activate thorstendl-cori-2.7-tf1.10
+#source activate thorstendl-cori-2.7-tf1.10
+source activate thorstendl-cori-py3-tf
 #module load tensorflow/intel-1.8.0-py27
 
 #openmp stuff
@@ -23,14 +23,14 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #debug
-export MKLDNN_VERBOSE=2
+export MKLDNN_VERBOSE=0 #2 is very verbose
 
 #directories
 datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=/global/cscratch1/sd/tkurth/temp/tiramisu
-numfiles_train=1000
-numfiles_validation=100
+numfiles_train=100
+numfiles_validation=10
 
 #create run dir
 run_dir=${WORK}/gb2018/tiramisu/runs/cori/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -42,19 +42,81 @@ cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
 cp ../../utils/climseg_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-lite-train.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-lite-inference.py ${run_dir}/
+cp ../../deeplab-tf/model.py ${run_dir}/
+cp ../../deeplab-tf/model_helpers.py ${run_dir}/
 
 #step in
 cd ${run_dir}
 
 #run the training
 #stage in
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}
+cmd="srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}"
+echo ${cmd}
+#${cmd}
 #scratchdir=${datadir}
 
 #fp32 lag 1, full
 #srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
 
-#fp32 lag 1, lite
-srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf-lite.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 4 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.lite.fp32.lag1.${SLURM_JOBID}
+
+#some parameters
+lag=0
+train=1
+test=1
+
+if [ ${train} -eq 1 ]; then
+  echo "Starting Training"
+  runid=0
+  runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.run* | tail -n1 | awk '{print $9}')
+  if [ ! -z ${runfiles} ]; then
+      runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
+  fi
+    
+  python -u ./deeplab-tf-lite-train.py --datadir_train ${scratchdir}/train/data \
+                                       --train_size ${numfiles_train} \
+                                       --datadir_validation ${scratchdir}/validation/data \
+                                       --validation_size ${numfiles_validation} \
+                                       --downsampling 2 \
+                                       --channels 0 1 2 10 \
+                                       --chkpt_dir checkpoint.fp32.lag${lag} \
+                                       --epochs 50 \
+                                       --fs local \
+                                       --loss weighted_mean \
+                                       --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
+                                       --model=resnet_v2_50 \
+                                       --scale_factor 1.0 \
+                                       --batch 2 \
+                                       --decoder=deconv1x \
+                                       --device "/device:cpu:0" \
+                                       --label_id 0 \
+                                       --disable_imsave \
+                                       --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train.run${runid}
+fi
+
+if [ ${test} -eq 1 ]; then
+  echo "Starting Testing"
+  runid=0
+  runfiles=$(ls -latr out.lite.fp32.lag${lag}.test.run* | tail -n1 | awk '{print $9}')
+  if [ ! -z ${runfiles} ]; then
+      runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
+  fi
+    
+  python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test/data \
+                                           --test_size ${numfiles_test} \
+                                           --downsampling 2 \
+                                           --channels 0 1 2 10 \
+                                           --chkpt_dir checkpoint.fp32.lag${lag} \
+                                           --output_graph deepcam_inference.pb \
+                                           --output output_test \
+                                           --fs local \
+                                           --loss weighted_mean \
+                                           --model=resnet_v2_50 \
+                                           --scale_factor 1.0 \
+                                           --batch 2 \
+                                           --decoder=deconv1x \
+                                           --device "/device:cpu:0" \
+                                           --label_id 0 \
+                                           --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test.run${runid}
+fi

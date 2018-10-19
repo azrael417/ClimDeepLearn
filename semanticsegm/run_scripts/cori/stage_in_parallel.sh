@@ -18,6 +18,8 @@ fi
 #$4 - validation count
 
 #training and validation in one go
-python ./parallel_stagein.py --targets ${2}/train/data ${2}/validation/data --cvt "climate:" --workers 8 --seed 7919 --counts ${3} ${4} --mkdir ${1}/train ${1}/validation
+cmd="python ./parallel_stagein.py --targets ${2}/train/data ${2}/validation/data --cvt "climate:" --workers 1 --seed 7919 --counts ${3} ${4} --mkdir ${1}/train ${1}/validation"
+#echo ${cmd}
+${cmd}
 cp ${1}/stats.h5 ${2}/train/data
 cp ${1}/stats.h5 ${2}/validation/data

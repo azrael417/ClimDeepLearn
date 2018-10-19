@@ -129,6 +129,7 @@ def main():
         comm_rank = MPI.COMM_WORLD.Get_rank()
         comm_size = MPI.COMM_WORLD.Get_size()
     except ImportError:
+        print("error: cannot import MPI from mpi4py")
         have_mpi = False
         comm_rank = 0
         comm_size = 1
@@ -142,10 +143,11 @@ def main():
     assert len(args.srcpaths) == len(args.counts), "make sure you specify a file count for every source path" if comm_rank==0 else None
 
     #create zipped list:
-    ziplist = zip(args.srcpaths, args.targets, args.counts)
+    ziplist = list(zip(args.srcpaths, args.targets, args.counts))
 
     if comm_rank == 0:
         print("Staging in total {dircount} directories".format(dircount=len(ziplist)))
+
 
     for stageid,dirtup in enumerate(ziplist):
 
