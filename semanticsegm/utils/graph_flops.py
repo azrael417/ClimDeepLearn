@@ -1,4 +1,5 @@
 
+
 import tensorflow as tf
 from collections import defaultdict
 
@@ -37,7 +38,7 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
         if o.type == 'Conv2D':
             #print o.name, o.inputs[0], o.inputs[1], o.outputs[0]
             #print o
-            fmt = o.get_attr('data_format')
+            fmt = o.get_attr('data_format').decode("utf-8")
             if format != fmt:
                 print('WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format))
             strides = o.get_attr('strides')
@@ -71,7 +72,7 @@ def graph_flops(g = None, batch = 1, format = 'NCHW', targets = None,
                                                                                                     o.name))
         if o.type == 'Conv2DBackpropInput':
             #print o.name, o.inputs[2], o.inputs[1], o.outputs[0]
-            fmt = o.get_attr('data_format')
+            fmt = o.get_attr('data_format').decode("utf-8")
             #assert(fmt == format)
             if format != fmt:
                 print('WARNING: tensor format ({}) does not match expected ({})'.format(fmt, format))

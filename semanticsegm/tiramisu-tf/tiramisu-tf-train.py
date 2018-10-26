@@ -192,7 +192,6 @@ def main(input_path_train, input_path_validation, channels, blocks, label_id, we
             w_cast = ensure_type(next_elem[2], tf.float32)
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
-                                                          axis=-1,
                                                           weights=w_cast,
                                                           reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
             if scale_factor != 1.0:
