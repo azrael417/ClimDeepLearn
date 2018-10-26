@@ -64,7 +64,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_train, input_path_validation, channels, blocks, label_id, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, label_id, blocks, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
 
     #init horovod
     nvtx.RangePush("init horovod", 1)
@@ -461,8 +461,8 @@ if __name__ == '__main__':
     main(input_path_train=parsed.datadir_train,
          input_path_validation=parsed.datadir_validation,
          channels=parsed.channels,
-         blocks=parsed.blocks,
          label_id=parsed.label_id,
+         blocks=parsed.blocks,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,

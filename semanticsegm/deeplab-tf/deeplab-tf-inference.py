@@ -257,7 +257,7 @@ if __name__ == '__main__':
     AP = argparse.ArgumentParser()
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
-    AP.add_argument("--output_graph",type=str,default=None,help="FIlename of the compressed inference graph.")
+    AP.add_argument("--output_graph",type=str,default=None,help="Filename of the compressed inference graph.")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")

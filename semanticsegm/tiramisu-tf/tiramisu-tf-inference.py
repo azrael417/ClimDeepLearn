@@ -53,7 +53,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_test, channels, blocks, weights, image_dir, checkpoint_dir, output_graph, tst_sz, loss_type, fs_type, optimizer, batch, batchnorm, dtype, chkpt, filter_sz, growth, scale_factor):
+def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkpoint_dir, output_graph, tst_sz, loss_type, fs_type, optimizer, batch, batchnorm, dtype, chkpt, filter_sz, growth, scale_factor):
 
     #init horovod
     comm_rank = 0
@@ -100,7 +100,7 @@ def main(input_path_test, channels, blocks, weights, image_dir, checkpoint_dir, 
 
     with test_graph.as_default():
         #create readers
-        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=False)
+        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id, sample_target=False)
         #create datasets
         if fs_type == "local":
             tst_dataset = create_dataset(tst_reader, tst_data, batch, 1, comm_local_size, comm_local_rank, dtype, shuffle=False)
@@ -233,6 +233,7 @@ if __name__ == '__main__':
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
+    AP.add_argument("--output_graph",type=str,default=None,help="Filename of the compressed inference graph.")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
@@ -245,6 +246,9 @@ if __name__ == '__main__':
     AP.add_argument("--filter-sz",type=int,default=3,help="Convolution filter size")
     AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
+                    where each channel presents a different label (e.g. for fuzzy labels). \
+                    If set to None, the selection will be randomized [None].")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -257,6 +261,7 @@ if __name__ == '__main__':
     #invoke main function
     main(input_path_test=parsed.datadir_test,
          channels=parsed.channels,
+         label_id=parsed.label_id,
          blocks=parsed.blocks,
          weights=weights,
          image_dir=parsed.output,
