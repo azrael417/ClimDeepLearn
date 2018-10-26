@@ -72,7 +72,7 @@ def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkp
     #get data
     test_graph = tf.Graph()
     tst_data  = load_data(input_path_test, False, tst_sz, False)
-    print("Shape of trn_data is {}".format(trn_data.shape[0]))
+    print("Shape of tst_data is {}".format(tst_data.shape[0]))
     print("done.")
 
     #print some stats
@@ -94,9 +94,9 @@ def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkp
 
     #compute epochs and stuff:
     if fs_type == "local":
-        num_samples = trn_data.shape[0] // comm_local_size
+        num_samples = tst_data.shape[0] // comm_local_size
     else:
-        num_samples = trn_data.shape[0] // comm_size
+        num_samples = tst_data.shape[0] // comm_size
 
     with test_graph.as_default():
         #create readers
