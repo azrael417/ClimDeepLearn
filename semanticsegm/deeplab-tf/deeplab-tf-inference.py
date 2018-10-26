@@ -1,3 +1,4 @@
+
 # suppress warnings from earlier versions of h5py (imported by tensorflow)
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -33,8 +34,8 @@ try:
 except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
-from model import *
-from model_helpers import *
+from deeplab_model import *
+from data_helpers import *
 from climseg_helpers import *
 
 #GLOBAL CONSTANTS

@@ -44,8 +44,8 @@ try:
 except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
-from model import *
-from model_helpers import *
+from tiramisu_model import *
+from data_helpers import *
 from climseg_helpers import *
 import graph_flops
 
@@ -63,7 +63,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_train, input_path_validation, channels, blocks, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, channels, blocks, label_id, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
 
     #init horovod
     nvtx.RangePush("init horovod", 1)
@@ -146,8 +146,8 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, sample_target=output_sampling)
-        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False)
+        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id, sample_target=output_sampling)
+        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id)
         #create datasets
         if fs_type == "local":
             trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, dtype, shuffle=True)
@@ -192,7 +192,7 @@ def main(input_path_train, input_path_validation, channels, blocks, weights, ima
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
                                                           weights=w_cast,
-                                                          reduction=reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
+                                                          reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
             if scale_factor != 1.0:
                 loss *= scale_factor
         elif loss_type == "focal":
@@ -441,6 +441,8 @@ if __name__ == '__main__':
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
+                    where each channel presents a different label (e.g. for fuzzy labels). If set to None, the selection will be randomized [None].")
     parsed = AP.parse_args()
 
     #play with weighting
@@ -459,6 +461,7 @@ if __name__ == '__main__':
          input_path_validation=parsed.datadir_validation,
          channels=parsed.channels,
          blocks=parsed.blocks,
+         label_id=parsed.label_id,
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,

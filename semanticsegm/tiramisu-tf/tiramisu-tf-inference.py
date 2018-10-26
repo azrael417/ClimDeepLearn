@@ -35,8 +35,8 @@ try:
 except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
-from model import *
-from model_helpers import *
+from tiramisu_model import *
+from data_helpers import *
 from climseg_helpers import *
 
 #GLOBAL CONSTANTS
@@ -143,7 +143,7 @@ def main(input_path_test, channels, blocks, weights, image_dir, checkpoint_dir, 
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
                                                           weights=w_cast,
-                                                          reduction=reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
+                                                          reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
             if scale_factor != 1.0:
                 loss *= scale_factor
         elif loss_type == "focal":

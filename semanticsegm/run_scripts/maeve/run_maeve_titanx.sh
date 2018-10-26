@@ -30,10 +30,10 @@ cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
 cp ../../utils/climseg_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-train.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-inference.py ${run_dir}/
-cp ../../deeplab-tf/model.py ${run_dir}/
-cp ../../deeplab-tf/model_helpers.py ${run_dir}/
+cp ../../utils/data_helpers.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
+cp ../../deeplab-tf/deeplab_model.py ${run_dir}/
 
 #step in
 cd ${run_dir}
