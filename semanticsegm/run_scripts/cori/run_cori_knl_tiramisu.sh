@@ -33,7 +33,7 @@ numfiles_train=100
 numfiles_validation=10
 
 #create run dir
-run_dir=${WORK}/gb2018/tiramisu/runs/cori/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
+run_dir=${WORK}/gb2018/tiramisu/runs/cori/tiramisu/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -41,7 +41,7 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/climseg_helpers.py ${run_dir}/
+cp ../../utils/common_helpers.py ${run_dir}/
 cp ../../utils/data_helpers.py ${run_dir}/
 cp ../../tiramisu-tf/tiramisu-tf-train.py ${run_dir}/
 cp ../../tiramisu-tf/tiramisu-tf-inference.py ${run_dir}/

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib.keras as tfk
 
-
+from common_helpers import *
 
 def conv(x, nf, sz, wd, stride=1):
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),

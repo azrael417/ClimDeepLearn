@@ -36,8 +36,8 @@ except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
 from tiramisu_model import *
+from common_helpers import *
 from data_helpers import *
-from climseg_helpers import *
 
 #GLOBAL CONSTANTS
 image_height =  768
@@ -233,7 +233,7 @@ if __name__ == '__main__':
     AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
-    AP.add_argument("--tst_sz",type=int,default=-1,help="How many samples do you want to use for testing?")
+    AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_test",type=str,help="Path to test data")
@@ -266,7 +266,7 @@ if __name__ == '__main__':
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
          output_graph_file=parsed.output_graph,
-         tst_sz=parsed.test_sz,
+         tst_sz=parsed.test_size,
          loss_type=parsed.loss,
          fs_type=parsed.fs,
          batch=parsed.batch,

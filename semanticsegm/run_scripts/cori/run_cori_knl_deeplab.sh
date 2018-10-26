@@ -28,12 +28,12 @@ export MKLDNN_VERBOSE=0 #2 is very verbose
 #directories
 datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
-scratchdir=/global/cscratch1/sd/tkurth/temp/tiramisu
+scratchdir=/global/cscratch1/sd/tkurth/temp/deeplab
 numfiles_train=100
 numfiles_validation=10
 
 #create run dir
-run_dir=${WORK}/gb2018/tiramisu/runs/cori/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
+run_dir=${WORK}/gb2018/tiramisu/runs/cori/deeplab/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -41,7 +41,7 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/climseg_helpers.py ${run_dir}/
+cp ../../utils/common_helpers.py ${run_dir}/
 cp ../../utils/data_helpers.py ${run_dir}/
 cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
 cp ../../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
@@ -70,7 +70,7 @@ if [ ${train} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
 
-  python -u ./deeplab-tf-lite-train.py --datadir_train ${scratchdir}/train/data \
+  python -u ./deeplab-tf-train.py      --datadir_train ${scratchdir}/train/data \
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation/data \
                                        --validation_size ${numfiles_validation} \
@@ -99,7 +99,7 @@ if [ ${test} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
 
-  python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test/data \
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test/data \
                                            --test_size ${numfiles_test} \
                                            --downsampling 2 \
                                            --channels 0 1 2 10 \

@@ -6,7 +6,7 @@ from tensorflow.contrib.slim.nets import resnet_v2, vgg
 from tensorflow.contrib.layers.python.layers import layers
 from tensorflow.contrib import layers as layers_lib
 
-from model_helpers import *
+from common_helpers import *
 
 #global parameters
 _BATCH_NORM_DECAY = 0.9997

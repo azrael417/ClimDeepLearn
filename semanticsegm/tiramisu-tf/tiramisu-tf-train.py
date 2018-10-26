@@ -1,4 +1,5 @@
 
+
 # suppress warnings from earlier versions of h5py (imported by tensorflow)
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -45,8 +46,8 @@ except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
 from tiramisu_model import *
+from common_helpers import *
 from data_helpers import *
-from climseg_helpers import *
 import graph_flops
 
 #GLOBAL CONSTANTS
@@ -125,7 +126,7 @@ def main(input_path_train, input_path_validation, channels, blocks, label_id, we
         print("Loss scale factor: {}".format(scale_factor))
         print("Output sampling target: {}".format(output_sampling))
         #print optimizer parameters
-        for k,v in optimizer.iteritems():
+        for k,v in optimizer.items():
             print("Solver Parameters: {k}: {v}".format(k=k,v=v))
         #print("Optimizer type: {}".format(optimizer['opt_type']))
         print("Num training samples: {}".format(trn_data.shape[0]))
@@ -191,6 +192,7 @@ def main(input_path_train, input_path_validation, channels, blocks, label_id, we
             w_cast = ensure_type(next_elem[2], tf.float32)
             loss = tf.losses.sparse_softmax_cross_entropy(labels=next_elem[1],
                                                           logits=logit,
+                                                          axis=-1,
                                                           weights=w_cast,
                                                           reduction=tf.losses.Reduction.SUM_BY_NONZERO_WEIGHTS)
             if scale_factor != 1.0:
@@ -203,10 +205,10 @@ def main(input_path_train, input_path_validation, channels, blocks, label_id, we
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
         #compute flops
-        flops = graph_flops.graph_flops(format='NCHW', batch=batch)
+        flops = graph_flops.graph_flops(format='NHWC', batch=batch)
         flops *= comm_size
         if comm_rank == 0:
-            print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+            print('training flops: {:.3f} TF/step'.format(flops * 1e-12))
 
         if horovod:
             loss_avg = hvd.allreduce(ensure_type(loss, tf.float32))
@@ -419,8 +421,8 @@ if __name__ == '__main__':
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
-    AP.add_argument("--trn_sz",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
-    AP.add_argument("--val_sz",type=int,default=-1,help="How many samples do you want to use for validation?")
+    AP.add_argument("--train_size",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
+    AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
@@ -465,8 +467,8 @@ if __name__ == '__main__':
          weights=weights,
          image_dir=parsed.output,
          checkpoint_dir=parsed.chkpt_dir,
-         trn_sz=parsed.trn_sz,
-         val_sz=parsed.val_sz,
+         trn_sz=parsed.train_size,
+         val_sz=parsed.validation_size,
          loss_type=parsed.loss,
          fs_type=parsed.fs,
          optimizer=parsed.optimizer,

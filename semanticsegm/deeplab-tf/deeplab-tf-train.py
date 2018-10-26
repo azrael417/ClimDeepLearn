@@ -42,8 +42,8 @@ except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
 from deeplab_model import *
+from common_helpers import *
 from data_helpers import *
-from climseg_helpers import *
 import graph_flops
 
 #GLOBAL CONSTANTS
