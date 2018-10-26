@@ -100,7 +100,7 @@ def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkp
 
     with test_graph.as_default():
         #create readers
-        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id, sample_target=False)
+        tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id)
         #create datasets
         if fs_type == "local":
             tst_dataset = create_dataset(tst_reader, tst_data, batch, 1, comm_local_size, comm_local_rank, dtype, shuffle=False)
