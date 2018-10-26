@@ -273,7 +273,6 @@ if __name__ == '__main__':
          batch=parsed.batch,
          batchnorm=parsed.use_batchnorm,
          dtype=dtype,
-         chkpt=parsed.chkpt,
          filter_sz=parsed.filter_sz,
          growth=parsed.growth,
          scale_factor=parsed.scale_factor)
