@@ -37,11 +37,6 @@ cp ../../deeplab-tf/model_helpers.py ${run_dir}/
 #step in
 cd ${run_dir}
 
-#run the training
-
-#fp32 lag 1, full
-#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
-
 #some parameters
 lag=0
 train=1
