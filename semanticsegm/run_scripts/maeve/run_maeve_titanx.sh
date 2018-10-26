@@ -29,7 +29,7 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/climseg_helpers.py ${run_dir}/
+cp ../../utils/common_helpers.py ${run_dir}/
 cp ../../utils/data_helpers.py ${run_dir}/
 cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
 cp ../../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
@@ -45,12 +45,12 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=0
+train=1
 test=1
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
-  python -u ./deeplab-tf-lite-train.py --datadir_train ${scratchdir}/train \
+  python -u ./deeplab-tf-train.py      --datadir_train ${scratchdir}/train \
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
@@ -71,7 +71,7 @@ fi
 
 if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
-  python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
                                            --chkpt_dir checkpoint.fp16.lag${lag} \
 					   --test_size -1 \
 					   --output_graph deepcam_inference.pb \

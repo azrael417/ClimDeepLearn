@@ -254,10 +254,6 @@ if __name__ == '__main__':
     # convert name of datatype into TF type object
     dtype=getattr(tf, parsed.dtype)
 
-    #check if we want horovod to be disabled
-    if parsed.disable_horovod:
-        horovod = False
-
     #invoke main function
     main(input_path_test=parsed.datadir_test,
          channels=parsed.channels,

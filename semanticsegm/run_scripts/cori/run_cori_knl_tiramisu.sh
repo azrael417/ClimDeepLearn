@@ -29,8 +29,9 @@ export MKLDNN_VERBOSE=0 #2 is very verbose
 datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=/global/cscratch1/sd/tkurth/temp/tiramisu
-numfiles_train=100
-numfiles_validation=10
+numfiles_train=1500
+numfiles_validation=300
+numfiles_test=500
 
 #create run dir
 run_dir=${WORK}/gb2018/tiramisu/runs/cori/tiramisu/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -52,15 +53,15 @@ cd ${run_dir}
 
 #run the training
 #stage in
-cmd="srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}"
+cmd="srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation} ${numfiles_test}"
 echo ${cmd}
 ${cmd}
 
 
 #some parameters
 lag=0
-train=1
-test=0
+train=0
+test=1
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
