@@ -53,7 +53,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, fs_type, optimizer, batch, batchnorm, dtype, filter_sz, growth, scale_factor):
+def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, fs_type, batch, batchnorm, dtype, filter_sz, growth, scale_factor):
 
     #init horovod
     comm_rank = 0
