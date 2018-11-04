@@ -19,7 +19,7 @@ from matplotlib.colors import ListedColormap
 import sys
 import os
 
-def plot_mask_sean(lons, lats, img_array, storm_mask, fname, year, month, day):
+def plot_mask_sean(img_array, storm_mask, fname, year, month, day):
 
   # Choose colormap
   cmap = mpl.cm.viridis
@@ -45,17 +45,17 @@ def plot_mask_sean(lons, lats, img_array, storm_mask, fname, year, month, day):
   d = img_array #h['climate']['data'][0,...]
   d = np.roll(d,[0,1152/2])
 
-  # lats = np.linspace(-90,90,768)
-  # longs = np.linspace(-180,180,1152)
+  lats = np.linspace(-90,90,768)
+  longs = np.linspace(-180,180,1152)
 
   def do_fig(figsize, fname, year, month, day):
       fig = plt.figure(figsize=figsize)
 
       # my_map = Basemap(projection='eck4', lon_0=np.median(lons),
       #                  resolution = 'c')
-      my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=np.median(lons),
-                  llcrnrlon=min(lons), urcrnrlat=max(lats), urcrnrlon=max(lons), resolution = 'c')
-      xx, yy = np.meshgrid(lons, lats)
+      my_map = Basemap(projection='robin', llcrnrlat=min(lats), lon_0=np.median(longs),
+                  llcrnrlon=min(longs), urcrnrlat=max(lats), urcrnrlon=max(longs), resolution = 'c')
+      xx, yy = np.meshgrid(longs, lats)
       x_map,y_map = my_map(xx,yy)
       my_map.drawcoastlines(color=[0.5,0.5,0.5])
       my_map.contourf(x_map,y_map,d,64,cmap=my_cmap, vmax=89, vmin=0, levels=np.arange(0,89,2))
@@ -63,8 +63,8 @@ def plot_mask_sean(lons, lats, img_array, storm_mask, fname, year, month, day):
       cbar.ax.set_ylabel('Integrated Water Vapor kg $m^{-2}$')
       plt.title("Segmented Extreme Weather Patterns {}-{}-{}".format(year, month, day))
       if True:
-          ar_contour = my_map.contour(x_map,y_map,p2,[0.5],linewidths=1,colors='blue', label='Atmospheric River', alpha=0.5)
-          tc_contour = my_map.contour(x_map,y_map,p1,[0.5],linewidths=1,colors='red', label='Tropical Cyclone', alpha=0.5)
+          ar_contour = my_map.contour(x_map,y_map,p2,[0.5],linewidths=1,colors='blue', label='Atmospheric River')
+          tc_contour = my_map.contour(x_map,y_map,p1,[0.5],linewidths=1,colors='red', label='Tropical Cyclone')
           
 
       lines = [tc_contour.collections[0], ar_contour.collections[0]]
@@ -154,9 +154,9 @@ if __name__ == "__main__":
       label = masks['label'][idx, ...]
       #plot TMQ prediction
       split_fname = basename.split("-")
-      plot_mask_sean(lat_lon['lon'], lat_lon['lat'], TMQ, prediction, basename+"_tmq__prediction.png", 
+      plot_mask_sean(TMQ, prediction, basename+"_tmq__prediction.png", 
         year=split_fname[1], month=split_fname[2], day=split_fname[3])
       #plot TMQ tkurth prediction (whatever that is)
-      plot_mask_sean(lat_lon['lon'], lat_lon['lat'],TMQ, label, basename+"_tmq_label_tkurth.png",
-        year=split_fname[1], month=split_fname[2], day=split_fname[3])
+      # plot_mask_sean(TMQ, label, basename+"_tmq_label_tkurth.png",
+      #   year=split_fname[1], month=split_fname[2], day=split_fname[3])
 
