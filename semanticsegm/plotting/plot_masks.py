@@ -108,6 +108,8 @@ def plot_mask(lons, lats, img_array, storm_mask,fname):
   plt.clf()
 
 
+ALT_DATAPATH = '/global/cscratch1/sd/amahesh/gb_output/missing_files_for_video'
+
 if __name__ == "__main__":
   AP = argparse.ArgumentParser()
   AP.add_argument("--datapath",type=str,default=None,required=True,help="Path in which to find the datafiles belonging to labels and predictions")
@@ -138,9 +140,15 @@ if __name__ == "__main__":
    
     #grab the data from the standard path
     for idx,fname in enumerate(fnames):
-      with h5.File(os.path.join(parsed_args.datapath, fname), "r") as f:
-        data = f["climate"]["data"][...]
-        labels = f["climate"]["labels"][...]
+      try:
+        with h5.File(os.path.join(parsed_args.datapath, fname), "r") as f:
+          data = f["climate"]["data"][...]
+          labels = f["climate"]["labels"][...]
+      except:
+        print("Using Alt Datapath")
+        with h5.File(os.path.join(ALT_DATAPATH, fname), "r") as f:
+          data = f["climate"]["data"][...]
+          labels = f["climate"]["labels"][...]
 
       #do sanity checks
       if np.linalg.norm(masks["label"][idx,...]-labels*100) > 0.0001:
