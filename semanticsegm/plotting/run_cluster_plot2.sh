@@ -9,7 +9,7 @@
 #SBATCH --output=run_plot1_output.out
 #SBATCH --error=run_plot1_error.err
 #SBATCH --mail-type=ALL
-#SBATCH -t 7:00:00
+#SBATCH -t 10:00:00
 #SBATCH -L SCRATCH
 #SBATCH --exclusive
 
