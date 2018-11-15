@@ -5,8 +5,8 @@
 #SBATCH --time=04:30:00
 #SBATCH --nodes=108
 #SBATCH --exclusive
-#SBATCH --output=teca_All-Hist_super_relaxed.out
-#SBATCH --error=teca_All-Hist_super_relaxed.err
+#SBATCH --output=teca_All-Hist_super_relaxed5.out
+#SBATCH --error=teca_All-Hist_super_relaxed5.err
 ##SBATCH -p debug 
 #SBATCH -C knl,quad,cache
 #SBATCH --mail-user=amahesh@lbl.gov
