@@ -1,4 +1,6 @@
 
+
+import sys
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.ops import control_flow_ops
@@ -32,10 +34,10 @@ def ensure_type(input, dtype):
     else:
         return input
 
-
 #return parameters in model
 def get_number_of_trainable_parameters():
-    return np.sum([np.prod(v.shape) for v in tf.trainable_variables()])
+    result = np.sum([int(np.prod(v.shape)) for v in tf.trainable_variables()])
+    return result
 
 
 #helper routine for FP16<->FP32 conversions
@@ -203,28 +205,28 @@ def get_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
 #larc optimizer:
 def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovod):
     #get learning rate
-    learning_rate=get_learning_rate(optimizer, global_step, steps_per_epoch)
+    learning_rate = get_learning_rate(optimizer, global_step, steps_per_epoch)
 
     #get LARC stuff
-    LARC_mode=get_dict_default(optimizer,"LARC_mode","clip")
-    LARC_eta=get_dict_default(optimizer,"LARC_eta",0.002)
-    LARC_epsilon=get_dict_default(optimizer,"LARC_epsilon",1./16000.)
+    LARC_mode = get_dict_default(optimizer,"LARC_mode","clip")
+    LARC_eta = get_dict_default(optimizer,"LARC_eta",0.002)
+    LARC_epsilon = get_dict_default(optimizer,"LARC_epsilon",1./16000.)
 
     #lag
-    gradient_lag=get_dict_default(optimizer,"gradient_lag",0)
+    gradient_lag = get_dict_default(optimizer,"gradient_lag",0)
 
     #set up optimizers
-    opt_type=get_dict_default(optimizer,"opt_type","LARC-Adam")
+    opt_type = get_dict_default(optimizer,"opt_type","LARC-Adam")
 
     #set up optimizers
     if opt_type == "LARC-Adam":
-        beta1=get_dict_default(optimizer,"beta1",0.9)
-        beta2=get_dict_default(optimizer,"beta2",0.999)
+        beta1 = get_dict_default(optimizer,"beta1",0.9)
+        beta2 = get_dict_default(optimizer,"beta2",0.999)
         optim = tf.train.AdamOptimizer(learning_rate=learning_rate)
     elif opt_type == "LARC-RMSProp":
         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
     elif opt_type == "LARC-SGD":
-        momentum=get_dict_default(optimizer,"momentum",0.)
+        momentum = get_dict_default(optimizer,"momentum",0.)
         optim = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=momentum)
     else:
         raise ValueError("Error, optimizer {} unsupported.".format(opt_type))
@@ -263,8 +265,14 @@ def get_larc_optimizer(optimizer, loss, global_step, steps_per_epoch, use_horovo
             if LARC_mode=="scale":
                 effective_lr = larc_local_lr
             else:
-                effective_lr = math_ops.minimum(larc_local_lr, 1.0)
+                # DEBUG
+                #effective_lr = math_ops.minimum(larc_local_lr, 1.0)
+                #we need to see which LR to take and then divide out the LR because otherwise it will be multiplied in
+                #again when we apply the gradients
+                effective_lr = math_ops.minimum(larc_local_lr, learning_rate) / learning_rate
+                # DEBUG
 
+            # rescale gradients
             effective_lr *= g_scale
 
             #multiply gradients

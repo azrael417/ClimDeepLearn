@@ -13,7 +13,7 @@ export CUDA_VISIBLE_DEVICES=2
 
 #directories
 #datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
-datadir=/data1/tkurth/tiramisu/segm_h5_v3_old
+datadir=/data1/mudigonda/missing_files_for_gb_video
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=${datadir}
 numfiles_train=1500
@@ -21,8 +21,9 @@ numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/test_run_nn256_np1536_j143026_convergence
-#rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
+#run_dir=/data1/tkurth/deeplab/runs/run_1
+run_dir=/data1/tkurth/deeplab/runs/test_run_nn256_np1536_j143026_convergence
+
 mkdir -p ${run_dir}
 
 #copy relevant files
@@ -38,14 +39,10 @@ cp ../../deeplab-tf/deeplab_model.py ${run_dir}/
 #step in
 cd ${run_dir}
 
-#run the training
-
-#fp32 lag 1, full
-#srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 -u python ./deeplab-tf.py --datadir_train ${scratchdir}/train/data --datadir_validation ${scratchdir}/validation/data --chkpt_dir checkpoint.fp32.lag1 --epochs 4 --fs local --loss weighted_mean --cluster_loss_weight 0.0 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=1 --model=resnet_v2_50 --scale_factor 1.0 --batch 1 --decoder=deconv1x --device "/device:cpu:0" --data_format "channels_last" |& tee out.fp32.lag1.${SLURM_JOBID}
 
 #some parameters
 lag=0
-train=1
+train=0
 test=1
 
 if [ ${train} -eq 1 ]; then
@@ -75,7 +72,7 @@ if [ ${test} -eq 1 ]; then
                                            --chkpt_dir checkpoint.fp16.lag${lag} \
 					   --test_size -1 \
 					   --output_graph deepcam_inference.pb \
-                                           --output output_test_debug \
+                                           --output output_test_5 \
                                            --fs local \
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \

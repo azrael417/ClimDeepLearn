@@ -3,6 +3,9 @@ import tensorflow.contrib.keras as tfk
 
 from common_helpers import *
 
+#print the network topology
+print_topology=True
+
 def conv(x, nf, sz, wd, stride=1):
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
                             padding='same', data_format='channels_first',
@@ -14,6 +17,10 @@ def conv(x, nf, sz, wd, stride=1):
 def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
 
     added = []
+
+    if print_topology:
+        print("START DB: input_size={}, num_layers={}, growth_rate={}, filter_size={}".format(x.shape, n, growth_rate, filter_sz))
+
     for i in range(n):
         if bn:
             with tf.name_scope("conv_bn_relu%i"%i) as scope:
@@ -30,10 +37,17 @@ def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
         x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
         added.append(b)
 
+    if print_topology:
+        print("END DB: output_size={}\n".format(x.shape))
+
     return x, added
 
 
 def transition_dn(x, p, wd, training, bn=False):
+
+    if print_topology:
+        print("START TR-DN: input_size={}".format(x.shape))
+
     if bn:
         with tf.name_scope("conv_bn_relu") as scope:
             b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
@@ -45,6 +59,10 @@ def transition_dn(x, p, wd, training, bn=False):
             b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
             b = tf.nn.relu(b)
             if p: b = tf.layers.dropout(b, rate=p, training=training)
+
+    if print_topology:
+        print("END TR-DN: output_size={}\n".format(b.shape))
+
     return b
 
 
@@ -55,6 +73,13 @@ def down_path(x, nb_layers, growth_rate, p, wd, training, bn=False, filter_sz=3)
         with tf.name_scope("DB%i"%i):
             x, added = dense_block(n, x, growth_rate, p, wd, training=training, bn=bn, filter_sz=filter_sz)
             skips.append(x)
+
+            if print_topology:
+                print("START SKIP({}): output_size={}\n".format(i, skips[-1].shape))
+
+            if print_topology:
+                print("START CONCAT: output_size={}\n".format(tf.concat(added,axis=1).shape))
+
         with tf.name_scope("TD%i"%i):
             x = transition_dn(x, p=p, wd=wd, training=training, bn=bn)
 
@@ -66,7 +91,12 @@ def reverse(a):
 
 
 def transition_up(added,wd,training):
+
     x = tf.concat(added,axis=1)
+
+    if print_topology:
+        print("START TR-UP: input_size={}".format(x.shape))
+
     _, ch, r, c = x.get_shape().as_list()
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
 				   padding='same', data_format='channels_first', filters=ch,
@@ -74,13 +104,29 @@ def transition_up(added,wd,training):
 				   bias_initializer=tf.initializers.zeros(),
                    kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
                    )
+
+    if print_topology:
+        print("END TR-UP: output_size={}\n".format(x.shape))
+
     return x
 
 
 def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3):
     for i,n in enumerate(nb_layers):
+
+        if print_topology:
+            print("END CONCAT: output_size={}\n".format(tf.concat(added,axis=1).shape))
+
         x = transition_up(added,wd,training)
+
+        if print_topology:
+            print("END SKIP({}): output_size={}".format(len(skips)-i-1,skips[i].shape))
+
         x = tf.concat([x,skips[i]],axis=1) #was axis=-1. Is that correct?
+
+        if print_topology:
+            print("CONCAT SKIP({})+TR-UP: output_size={}\n".format(len(skips)-i-1,x.shape))
+
         x, added = dense_block(n,x,growth_rate,p,wd,training=training,bn=bn,filter_sz=filter_sz)
     return x
 
@@ -123,6 +169,9 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
 
     with tf.variable_scope("tiramisu", custom_getter=float32_variable_storage_getter):
 
+        if print_topology:
+            print("START CONV-IN: input_size={}, num_filters={}, filter_size={}".format(img_input.shape, nb_filter, filter_sz))
+
         with tf.variable_scope("conv_input") as scope:
             x = conv(img_input, nb_filter, sz=filter_sz, wd=wd)
             if batchnorm:
@@ -130,11 +179,17 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             x = tf.nn.relu(x)
             if p: x = tf.layers.dropout(x, rate=p, training=training)
 
+        if print_topology:
+            print("END CONV-IN: output_size={}\n".format(x.shape))
+
         with tf.name_scope("down_path") as scope:
             skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
 
         with tf.name_scope("up_path") as scope:
-            x = up_path(added, reverse(skips[:-1]),reverse(nb_layers[:-1]), growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
+            x = up_path(added, reverse(skips[:-1]), reverse(nb_layers[:-1]), growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
+
+        if print_topology:
+            print("START CONV-OUT: input_size={}, num_filters={}, filter_size={}".format(x.shape, nb_classes, 1))
 
         with tf.name_scope("conv_output") as scope:
             x = conv(x,nb_classes,sz=1,wd=wd)
@@ -142,6 +197,9 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             _,f,r,c = x.get_shape().as_list()
         #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
         x = ensure_type(tf.transpose(x,[0,2,3,1]), tf.float32) #necessary because sparse softmax cross entropy does softmax over last axis
+
+        if print_topology:
+            print("END CONV-OUT: output_size={}\n".format(x.shape))
 
         #if median_filter:
         #    x = median_pool(x, 3, [1,1,1,1])

@@ -239,6 +239,11 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, cha
         if comm_rank == 0:
             print('training flops: {:.3f} TF/step'.format(flops * 1e-12))
 
+        #number of trainable parameters
+        if comm_rank ==0:
+            num_params = get_number_of_trainable_parameters()
+            print('number of trainable parameters: {} ({} MB)'.format(num_params, num_params*(4 if dtype==tf.float32 else 2)*(2**-20)))
+            
         if horovod:
             loss_avg = hvd.allreduce(ensure_type(loss, tf.float32))
         else:
