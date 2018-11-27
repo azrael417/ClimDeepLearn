@@ -20,7 +20,7 @@ numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/run_9
+run_dir=/data1/tkurth/deeplab/runs/run_2
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -28,11 +28,11 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
-cp ../../utils/climseg_helpers.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-train.py ${run_dir}/
-cp ../../deeplab-tf/deeplab-tf-lite-inference.py ${run_dir}/
-cp ../../deeplab-tf/model.py ${run_dir}/
-cp ../../deeplab-tf/model_helpers.py ${run_dir}/
+cp ../../utils/common_helpers.py ${run_dir}/
+cp ../../utils/data_helpers.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
+cp ../../deeplab-tf/deeplab-tf-inference.py ${run_dir}/
+cp ../../deeplab-tf/deeplab_model.py ${run_dir}/
 
 #step in
 cd ${run_dir}
@@ -50,7 +50,7 @@ if [ ${train} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
     
-  python -u ./deeplab-tf-lite-train.py --datadir_train ${scratchdir}/train \
+  python -u ./deeplab-tf-train.py --datadir_train ${scratchdir}/train \
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
@@ -79,7 +79,7 @@ if [ ${test} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
     
-  python -u ./deeplab-tf-lite-inference.py --datadir_test ${scratchdir}/test \
+  python -u ./deeplab-tf-inference.py --datadir_test ${scratchdir}/test \
                                            --test_size ${numfiles_test} \
                                            --downsampling 2 \
                                            --channels 0 1 2 10 \
