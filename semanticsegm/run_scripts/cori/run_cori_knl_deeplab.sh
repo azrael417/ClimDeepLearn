@@ -26,11 +26,12 @@ export OMP_PROC_BIND=spread
 export MKLDNN_VERBOSE=0 #2 is very verbose
 
 #directories
-datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split
+datadir=/global/cscratch1/sd/tkurth/gb2018/tiramisu/segm_h5_v3_new_split_maeve
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
 scratchdir=/global/cscratch1/sd/tkurth/temp/deeplab
 numfiles_train=100
 numfiles_validation=10
+numfiles_test=10
 
 #create run dir
 run_dir=${WORK}/gb2018/tiramisu/runs/cori/deeplab/run_nnodes${SLURM_NNODES}_j${SLURM_JOBID}
@@ -41,6 +42,7 @@ mkdir -p ${run_dir}
 cp stage_in_parallel.sh ${run_dir}/
 cp ../../utils/parallel_stagein.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
+cp ../../utils/tracehook.py ${run_dir}/
 cp ../../utils/common_helpers.py ${run_dir}/
 cp ../../utils/data_helpers.py ${run_dir}/
 cp ../../deeplab-tf/deeplab-tf-train.py ${run_dir}/
@@ -52,7 +54,7 @@ cd ${run_dir}
 
 #run the training
 #stage in
-cmd="srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation}"
+cmd="srun -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 264 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation} ${numfiles_test}"
 echo ${cmd}
 ${cmd}
 
@@ -60,7 +62,7 @@ ${cmd}
 #some parameters
 lag=0
 train=1
-test=1
+test=0
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
@@ -70,14 +72,14 @@ if [ ${train} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
 
-  python -u ./deeplab-tf-train.py      --datadir_train ${scratchdir}/train/data \
+  python -u ./deeplab-tf-train.py      --datadir_train ${scratchdir}/train \
                                        --train_size ${numfiles_train} \
-                                       --datadir_validation ${scratchdir}/validation/data \
+                                       --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
                                        --downsampling 2 \
                                        --channels 0 1 2 10 \
                                        --chkpt_dir checkpoint.fp32.lag${lag} \
-                                       --epochs 50 \
+                                       --epochs 1 \
                                        --fs local \
                                        --loss weighted_mean \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
@@ -88,6 +90,8 @@ if [ ${train} -eq 1 ]; then
                                        --device "/device:cpu:0" \
                                        --label_id 0 \
                                        --disable_imsave \
+                                       --tracing="2:5" \
+                                       --trace_dir="./" \
                                        --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train.run${runid}
 fi
 
@@ -99,7 +103,7 @@ if [ ${test} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
 
-  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test/data \
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
                                            --test_size ${numfiles_test} \
                                            --downsampling 2 \
                                            --channels 0 1 2 10 \
