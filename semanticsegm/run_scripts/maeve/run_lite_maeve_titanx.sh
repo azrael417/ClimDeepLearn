@@ -14,6 +14,7 @@ scratchdir=/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
+downsampling=4
 
 #create run dir
 run_dir=/mnt/runs/deeplab/run_ngpus1
@@ -36,7 +37,7 @@ cd ${run_dir}
 #some parameters
 lag=0
 train=1
-test=1
+test=0
 
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
@@ -50,7 +51,8 @@ if [ ${train} -eq 1 ]; then
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
-                                       --downsampling 2 \
+                                       --downsampling ${downsampling} \
+				       --downsampling_mode "crop" \
                                        --channels 0 1 2 10 \
                                        --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 50 \
@@ -77,7 +79,8 @@ if [ ${test} -eq 1 ]; then
     
   python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
                                            --test_size ${numfiles_test} \
-                                           --downsampling 2 \
+                                           --downsampling ${downsampling} \
+					   --downsampling_mode "crop" \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --output_graph deepcam_inference.pb \

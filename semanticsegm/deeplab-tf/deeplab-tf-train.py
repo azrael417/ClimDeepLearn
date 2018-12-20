@@ -181,23 +181,23 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, dow
                 length = 1./float(downsampling_fact)
                 offset = length/2.
                 boxes = [[ offset, offset, offset+length, offset+length ]]*batch
-                box_ind = range(0,batch)
+                box_ind = list(range(0,batch))
                 crop_size = [image_height, image_width]
-
+                
                 #be careful with data order
                 if data_format=="channels_first":
                     next_elem[0] = tf.transpose(next_elem[0], perm=[0,2,3,1])
-                
+                    
                 #crop
-                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data cropping"), \
-                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label cropping"), axis=-1), \
-                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data cropping"), axis=-1), \
+                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
+                             ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
+                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
                              next_elem[3])
-
+                
                 #be careful with data order
                 if data_format=="channels_first":
                     next_elem[0] = tf.transpose(next_elem[0], perm=[0,3,1,2])
-                
+                    
             else:
                 raise ValueError("Error, downsampling mode {} not supported. Supported are [crop, scale]".format(downsampling_mode))
 
@@ -524,7 +524,7 @@ if __name__ == '__main__':
     #check if we want horovod to be disabled
     if parsed.disable_horovod:
         horovod = False
-
+        
     #invoke main function
     main(device=parsed.device,
          input_path_train=parsed.datadir_train,
