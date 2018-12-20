@@ -1,8 +1,5 @@
 #!/bin/bash
 
-#load python env
-source activate thorsten-tf-py27
-
 #openmp stuff
 export OMP_NUM_THREADS=6
 export OMP_PLACES=threads
@@ -12,15 +9,14 @@ export OMP_PROC_BIND=spread
 export CUDA_VISIBLE_DEVICES=2
 
 #directories
-datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
-#scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
-scratchdir=${datadir}
+datadir=/mnt/data
+scratchdir=/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/tiramisu/runs/run_9
+run_dir=/mnt/runs/deeplab/run_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -64,7 +60,7 @@ if [ ${train} -eq 1 ]; then
                                        --model=resnet_v2_50 \
                                        --scale_factor 1.0 \
                                        --batch 2 \
-                                       --decoder=deconv1x \
+                                       --decoder bilinear \
                                        --device "/device:cpu:0" \
                                        --label_id 0 \
                                        --disable_imsave \
