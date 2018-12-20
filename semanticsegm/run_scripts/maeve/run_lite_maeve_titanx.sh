@@ -52,7 +52,7 @@ if [ ${train} -eq 1 ]; then
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
                                        --downsampling ${downsampling} \
-				       --downsampling_mode "crop" \
+				       --downsampling_mode "center-crop" \
                                        --channels 0 1 2 10 \
                                        --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 50 \
@@ -80,7 +80,7 @@ if [ ${test} -eq 1 ]; then
   python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
                                            --test_size ${numfiles_test} \
                                            --downsampling ${downsampling} \
-					   --downsampling_mode "crop" \
+					   --downsampling_mode "center-crop" \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --output_graph deepcam_inference.pb \

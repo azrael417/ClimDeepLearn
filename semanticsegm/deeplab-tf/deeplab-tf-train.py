@@ -176,7 +176,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, dow
                                                                                  [1,1,1,1], 'VALID'), rand_select), axis=-1), \
                              tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
                              next_elem[3])
-            elif downsampling_mode == "crop":
+            elif downsampling_mode == "center-crop":
                 #some parameters
                 length = 1./float(downsampling_fact)
                 offset = length/2.
@@ -199,7 +199,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, dow
                     next_elem[0] = tf.transpose(next_elem[0], perm=[0,3,1,2])
                     
             else:
-                raise ValueError("Error, downsampling mode {} not supported. Supported are [crop, scale]".format(downsampling_mode))
+                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, scale]".format(downsampling_mode))
 
         #create init handles
         #trn
@@ -487,7 +487,7 @@ if __name__ == '__main__':
     AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
-    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, crop].")
+    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop].")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
