@@ -20,7 +20,7 @@ numfiles_validation=300
 numfiles_test=500
 
 #create run dir
-run_dir=/data1/tkurth/deeplab/runs/run_2
+run_dir=/data1/tkurth/deeplab/runs/run_3
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -66,7 +66,6 @@ if [ ${train} -eq 1 ]; then
                                        --batch 2 \
                                        --decoder=deconv1x \
                                        --device "/device:cpu:0" \
-                                       --label_id 0 \
                                        --disable_imsave \
                                        --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train.run${runid}
 fi
