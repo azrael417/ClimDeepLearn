@@ -51,8 +51,8 @@ from data_helpers import *
 import graph_flops
 
 #GLOBAL CONSTANTS
-image_height =  768
-image_width = 1152
+image_height_orig =  768
+image_width_orig = 1152
 
 
 class StoreDictKeyPair(argparse.Action):
@@ -64,7 +64,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_train, input_path_validation, channels, label_id, blocks, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
+def main(input_path_train, input_path_validation, downsampling_fact, downsampling_mode, channels, data_format, label_id, blocks, weights, image_dir, checkpoint_dir, trn_sz, val_sz, loss_type, fs_type, optimizer, batch, batchnorm, num_epochs, dtype, chkpt, filter_sz, growth, disable_checkpoints, disable_imsave, tracing, trace_dir, output_sampling, scale_factor):
 
     #init horovod
     nvtx.RangePush("init horovod", 1)
@@ -85,7 +85,11 @@ def main(input_path_train, input_path_validation, channels, label_id, blocks, we
         if comm_rank == 0:
             print("Using distributed computation with Horovod: {} total ranks".format(comm_size,comm_rank))
     nvtx.RangePop() # init horovod
-
+    
+    #downsampling? recompute image dims
+    image_height =  image_height_orig // downsampling_fact
+    image_width = image_width_orig // downsampling_fact
+    
     #parameters
     per_rank_output = False
     loss_print_interval = 10
@@ -147,8 +151,8 @@ def main(input_path_train, input_path_validation, channels, label_id, blocks, we
     with training_graph.as_default():
         nvtx.RangePush("TF Init", 3)
         #create readers
-        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id, sample_target=output_sampling)
-        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id)
+        trn_reader = h5_input_reader(input_path_train, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, label_id=label_id, sample_target=output_sampling)
+        val_reader = h5_input_reader(input_path_validation, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, data_format=data_format, label_id=label_id)
         #create datasets
         if fs_type == "local":
             trn_dataset = create_dataset(trn_reader, trn_data, batch, num_epochs, comm_local_size, comm_local_rank, dtype, shuffle=True)
@@ -160,13 +164,50 @@ def main(input_path_train, input_path_validation, channels, label_id, blocks, we
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
-                                                       ((batch, len(channels), image_height, image_width),
+                                                       ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
                                                         (batch, image_height, image_width),
                                                         (batch, image_height, image_width),
                                                         (batch))
                                                        )
         next_elem = iterator.get_next()
-
+        
+        #if downsampling, do some preprocessing
+        if downsampling_fact != 1:
+            if downsampling_mode == "scale":
+                #do downsampling
+                rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
+                next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                             tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
+                                                                                 [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                 [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                 [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                             tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
+                             next_elem[3])
+            elif downsampling_mode == "center-crop":
+                #some parameters
+                length = 1./float(downsampling_fact)
+                offset = length/2.
+                boxes = [[ offset, offset, offset+length, offset+length ]]*batch
+                box_ind = list(range(0,batch))
+                crop_size = [image_height, image_width]
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem = (tf.transpose(next_elem[0], perm=[0,2,3,1]), next_elem[1], next_elem[2], next_elem[3])
+                    
+                #crop
+                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
+                             ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
+                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
+                             next_elem[3])
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem = (tf.transpose(next_elem[0], perm=[0,3,1,2]), next_elem[1], next_elem[2], next_elem[3])
+                    
+            else:
+                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, scale]".format(downsampling_mode))
+        
         #create init handles
         #trn
         trn_iterator = trn_dataset.make_initializable_iterator()
@@ -182,7 +223,7 @@ def main(input_path_train, input_path_validation, channels, label_id, blocks, we
         nb_filter = 64
 
         #set up model
-        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False)
+        logit, prediction = create_tiramisu(3, next_elem[0], image_height, image_width, num_channels, loss_weights=weights, nb_layers_per_block=blocks, p=0.2, wd=1e-4, dtype=dtype, batchnorm=batchnorm, growth_rate=growth, nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False, data_format=data_format)
         #prediction_argmax = median_pool(prediction_argmax, 3, strides=[1,1,1,1])
 
         #set up loss
@@ -203,8 +244,8 @@ def main(input_path_train, input_path_validation, channels, label_id, blocks, we
         else:
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
-        #compute flops
-        flops = graph_flops.graph_flops(format='NHWC', batch=batch)
+        #determine flops
+        flops = graph_flops.graph_flops(format="NHWC" if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
             print('training flops: {:.3f} TF/step'.format(flops * 1e-12))
@@ -428,6 +469,8 @@ if __name__ == '__main__':
     AP.add_argument("--train_size",type=int,default=-1,help="How many samples do you want to use for training? A small number can be used to help debug/overfit")
     AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
+    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop].")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
@@ -447,6 +490,7 @@ if __name__ == '__main__':
     AP.add_argument("--trace-dir",type=str,help="Directory where trace files should be written")
     AP.add_argument("--sampling",type=int,help="Target number of pixels from each class to sample")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--data_format", default="channels_first",help="Which data format shall be picked [channels_first, channels_last].")
     AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
                     where each channel presents a different label (e.g. for fuzzy labels). If set to None, the selection will be randomized [None].")
     parsed = AP.parse_args()
@@ -465,7 +509,10 @@ if __name__ == '__main__':
     #invoke main function
     main(input_path_train=parsed.datadir_train,
          input_path_validation=parsed.datadir_validation,
+         downsampling_fact=parsed.downsampling,
+         downsampling_mode=parsed.downsampling_mode,
          channels=parsed.channels,
+         data_format=parsed.data_format,
          label_id=parsed.label_id,
          blocks=parsed.blocks,
          weights=weights,

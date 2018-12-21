@@ -1,8 +1,5 @@
 #!/bin/bash
 
-#load python env
-source activate thorsten-tf-py27
-
 #openmp stuff
 export OMP_NUM_THREADS=6
 export OMP_PLACES=threads
@@ -12,15 +9,16 @@ export OMP_PROC_BIND=spread
 export CUDA_VISIBLE_DEVICES=2
 
 #directories
-datadir=/data1/tkurth/tiramisu/segm_h5_v3_new_split
-#scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
-scratchdir=${datadir}
+datadir=/mnt/data
+scratchdir=/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
+downsampling=4
+batch=8
 
 #create run dir
-run_dir=/data1/tkurth/deeplab/runs/run_3
+run_dir=/mnt/runs/deeplab/run_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -39,7 +37,7 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=1
+train=0
 test=1
 
 if [ ${train} -eq 1 ]; then
@@ -50,23 +48,26 @@ if [ ${train} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
     
-  python -u ./deeplab-tf-train.py --datadir_train ${scratchdir}/train \
+  python -u ./deeplab-tf-train.py      --datadir_train ${scratchdir}/train \
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
-                                       --downsampling 2 \
+                                       --downsampling ${downsampling} \
+				       --downsampling_mode "center-crop" \
                                        --channels 0 1 2 10 \
                                        --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 50 \
                                        --fs local \
                                        --loss weighted_mean \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
-                                       --model=resnet_v2_50 \
+                                       --model resnet_v2_50 \
                                        --scale_factor 1.0 \
-                                       --batch 2 \
-                                       --decoder=deconv1x \
+                                       --batch ${batch} \
+                                       --decoder bilinear \
                                        --device "/device:cpu:0" \
+                                       --label_id 0 \
                                        --disable_imsave \
+				       --use_batchnorm \
                                        --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.train.run${runid}
 fi
 
@@ -78,9 +79,10 @@ if [ ${test} -eq 1 ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
     
-  python -u ./deeplab-tf-inference.py --datadir_test ${scratchdir}/test \
+  python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
                                            --test_size ${numfiles_test} \
-                                           --downsampling 2 \
+                                           --downsampling ${downsampling} \
+					   --downsampling_mode "center-crop" \
                                            --channels 0 1 2 10 \
                                            --chkpt_dir checkpoint.fp32.lag${lag} \
                                            --output_graph deepcam_inference.pb \
@@ -89,9 +91,10 @@ if [ ${test} -eq 1 ]; then
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \
                                            --scale_factor 1.0 \
-                                           --batch 2 \
-                                           --decoder=deconv1x \
+                                           --batch ${batch} \
+                                           --decoder bilinear \
                                            --device "/device:cpu:0" \
                                            --label_id 0 \
+					   --use_batchnorm \
                                            --data_format "channels_last" |& tee out.lite.fp32.lag${lag}.test.run${runid}
 fi

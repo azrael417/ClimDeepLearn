@@ -43,7 +43,7 @@ image_height_orig = 768
 image_width_orig = 1152
 
 #main function
-def main(device, input_path_test, downsampling_fact, channels, data_format, label_id, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
+def main(device, input_path_test, downsampling_fact, downsampling_mode, channels, data_format, label_id, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, model, decoder, fs_type, batch, batchnorm, dtype, scale_factor):
     #init horovod
     comm_rank = 0
     comm_local_rank = 0
@@ -114,14 +114,40 @@ def main(device, input_path_test, downsampling_fact, channels, data_format, labe
 
         #if downsampling, do some preprocessing
         if downsampling_fact != 1:
-            rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
-            next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
-                        tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
-                                                                          [1, downsampling_fact, downsampling_fact, 1], \
-                                                                          [1, downsampling_fact, downsampling_fact, 1], \
-                                                                          [1,1,1,1], 'VALID'), rand_select), axis=-1), \
-                        tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
-                        next_elem[3])
+            if downsampling_mode == "scale":
+                rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
+                next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                            tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
+                                                                              [1, downsampling_fact, downsampling_fact, 1], \
+                                                                              [1, downsampling_fact, downsampling_fact, 1], \
+                                                                              [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                            tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
+                            next_elem[3])
+        
+            elif downsampling_mode == "center-crop":
+                #some parameters
+                length = 1./float(downsampling_fact)
+                offset = length/2.
+                boxes = [[ offset, offset, offset+length, offset+length ]]*batch
+                box_ind = list(range(0,batch))
+                crop_size = [image_height, image_width]
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem[0] = tf.transpose(next_elem[0], perm=[0,2,3,1])
+                    
+                #crop
+                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
+                             ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
+                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
+                             next_elem[3])
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem[0] = tf.transpose(next_elem[0], perm=[0,3,1,2])
+                    
+            else:
+                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, scale]".format(downsampling_mode))
 
         #create init handles
         #tst
@@ -261,6 +287,7 @@ if __name__ == '__main__':
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
+    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop].")
     AP.add_argument("--loss",default="weighted",choices=["weighted","weighted_mean","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_test",type=str,help="Path to test data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
@@ -289,6 +316,7 @@ if __name__ == '__main__':
     main(device=parsed.device,
          input_path_test=parsed.datadir_test,
          downsampling_fact=parsed.downsampling,
+         downsampling_mode=parsed.downsampling_mode,
          channels=parsed.channels,
          data_format=parsed.data_format,
          label_id=parsed.label_id,

@@ -83,7 +83,7 @@ ENV TF_NEED_VERBS=0
 ENV TF_NEED_MPI=0
 ENV TF_SET_ANDROID_WORKSPACE=0
 ENV TF_NEED_NGRAPH=0
-ENV LD_LIBRARY_PATH=/usr/local/tensorrt/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/usr/local/cuda/extras/CUPTI/lib64:/usr/local/tensorrt/lib:${LD_LIBRARY_PATH}
 RUN cd /src && git clone https://github.com/tensorflow/tensorflow.git && cd tensorflow && \
     ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
     export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:/usr/local/cuda/lib64:${LD_LIBRARY_PATH} && \

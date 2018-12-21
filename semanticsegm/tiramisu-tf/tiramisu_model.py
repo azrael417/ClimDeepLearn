@@ -4,37 +4,38 @@ import tensorflow.contrib.keras as tfk
 from common_helpers import *
 
 #print the network topology
-print_topology=True
+print_topology=False
 
-def conv(x, nf, sz, wd, stride=1):
+def conv(x, nf, sz, wd, stride=1, data_format='channels_first'):
     return tf.layers.conv2d(inputs=x, filters=nf, kernel_size=sz, strides=(stride,stride),
-                            padding='same', data_format='channels_first',
+                            padding='same', data_format=data_format,
                             kernel_initializer= tfk.initializers.he_uniform(),
                             bias_initializer=tf.initializers.zeros(),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
                             )
 
-def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
+def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3, data_format='channels_first'):
 
-    added = []
+    channels_axis = 1 if data_format=='channels_first' else -1
 
     if print_topology:
         print("START DB: input_size={}, num_layers={}, growth_rate={}, filter_size={}".format(x.shape, n, growth_rate, filter_sz))
 
+    added = []
     for i in range(n):
         if bn:
             with tf.name_scope("conv_bn_relu%i"%i) as scope:
-                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
-                b = tf.layers.batch_normalization(b, axis=1, training=training)
+                b = conv(x, growth_rate, sz=filter_sz, wd=wd, data_format=data_format)
+                b = tf.layers.batch_normalization(b, axis=channels_axis, training=training)
                 b = tf.nn.relu(b)
                 if p: b = tf.layers.dropout(b, rate=p, training=training)
         else:
             with tf.name_scope("conv_relu%i"%i) as scope:
-                b = conv(x, growth_rate, sz=filter_sz, wd=wd)
+                b = conv(x, growth_rate, sz=filter_sz, wd=wd, data_format=data_format)
                 b = tf.nn.relu(b)
                 if p: b = tf.layers.dropout(b, rate=p, training=training)
 
-        x = tf.concat([x, b], axis=1) #was axis=-1. Is that correct?
+        x = tf.concat([x, b], axis=channels_axis) #was axis=-1. Is that correct?
         added.append(b)
 
     if print_topology:
@@ -43,20 +44,22 @@ def dense_block(n, x, growth_rate, p, wd, training, bn=False, filter_sz=3):
     return x, added
 
 
-def transition_dn(x, p, wd, training, bn=False):
+def transition_dn(x, p, wd, training, bn=False, data_format='channels_first'):
 
+    channels_axis = 1 if data_format=='channels_first' else -1
+    
     if print_topology:
         print("START TR-DN: input_size={}".format(x.shape))
-
+        
     if bn:
         with tf.name_scope("conv_bn_relu") as scope:
-            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2) #was [-1]. Filters are at 1 now.
-            b = tf.layers.batch_normalization(b, axis=1, training=training)
+            b = conv(x, x.get_shape().as_list()[channels_axis], sz=1, wd=wd, stride=2, data_format=data_format) #was [-1]. Filters are at 1 now.
+            b = tf.layers.batch_normalization(b, axis=channels_axis, training=training)
             b = tf.nn.relu(b)
             if p: b = tf.layers.dropout(b, rate=p, training=training)
     else:
         with tf.name_scope("conv_relu") as scope:
-            b = conv(x, x.get_shape().as_list()[1], sz=1, wd=wd, stride=2)
+            b = conv(x, x.get_shape().as_list()[channels_axis], sz=1, wd=wd, stride=2, data_format=data_format)
             b = tf.nn.relu(b)
             if p: b = tf.layers.dropout(b, rate=p, training=training)
 
@@ -66,22 +69,24 @@ def transition_dn(x, p, wd, training, bn=False):
     return b
 
 
-def down_path(x, nb_layers, growth_rate, p, wd, training, bn=False, filter_sz=3):
+def down_path(x, nb_layers, growth_rate, p, wd, training, bn=False, filter_sz=3, data_format='channels_first'):
 
+    channels_axis = 1 if data_format=='channels_first' else -1
+    
     skips = []
     for i,n in enumerate(nb_layers):
         with tf.name_scope("DB%i"%i):
-            x, added = dense_block(n, x, growth_rate, p, wd, training=training, bn=bn, filter_sz=filter_sz)
+            x, added = dense_block(n, x, growth_rate, p, wd, training=training, bn=bn, filter_sz=filter_sz, data_format=data_format)
             skips.append(x)
 
             if print_topology:
-                print("START SKIP({}): output_size={}\n".format(i, skips[-1].shape))
+                print("START SKIP({}): output_size={}\n".format(i, skips[channels_axis].shape))
 
             if print_topology:
-                print("START CONCAT: output_size={}\n".format(tf.concat(added,axis=1).shape))
+                print("START CONCAT: output_size={}\n".format(tf.concat(added,axis=channels_axis).shape))
 
         with tf.name_scope("TD%i"%i):
-            x = transition_dn(x, p=p, wd=wd, training=training, bn=bn)
+            x = transition_dn(x, p=p, wd=wd, training=training, bn=bn, data_format=data_format)
 
     return skips, added
 
@@ -90,16 +95,18 @@ def reverse(a):
 	return list(reversed(a))
 
 
-def transition_up(added,wd,training):
+def transition_up(added,wd,training, data_format='channels_first'):
 
-    x = tf.concat(added,axis=1)
+    channels_axis = 1 if data_format=='channels_first' else -1
+    
+    x = tf.concat(added,axis=channels_axis)
 
     if print_topology:
         print("START TR-UP: input_size={}".format(x.shape))
 
     _, ch, r, c = x.get_shape().as_list()
     x = tf.layers.conv2d_transpose(inputs=x,strides=(2,2),kernel_size=(3,3),
-				   padding='same', data_format='channels_first', filters=ch,
+				   padding='same', data_format=data_format, filters=ch,
 				   kernel_initializer=tfk.initializers.he_uniform(),
 				   bias_initializer=tf.initializers.zeros(),
                    kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=wd)
@@ -111,13 +118,16 @@ def transition_up(added,wd,training):
     return x
 
 
-def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3):
+def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3, data_format='channels_first'):
+
+    channels_axis = 1 if data_format=='channels_first' else -1
+    
     for i,n in enumerate(nb_layers):
 
         if print_topology:
-            print("END CONCAT: output_size={}\n".format(tf.concat(added,axis=1).shape))
+            print("END CONCAT: output_size={}\n".format(tf.concat(added,axis=channels_axis).shape))
 
-        x = transition_up(added,wd,training)
+        x = transition_up(added,wd,training,data_format=data_format)
 
         if print_topology:
             print("END SKIP({}): output_size={}".format(len(skips)-i-1,skips[i].shape))
@@ -127,7 +137,7 @@ def up_path(added,skips,nb_layers,growth_rate,p,wd,training,bn=False,filter_sz=3
         if print_topology:
             print("CONCAT SKIP({})+TR-UP: output_size={}\n".format(len(skips)-i-1,x.shape))
 
-        x, added = dense_block(n,x,growth_rate,p,wd,training=training,bn=bn,filter_sz=filter_sz)
+        x, added = dense_block(n,x,growth_rate,p,wd,training=training,bn=bn,filter_sz=filter_sz,data_format=data_format)
     return x
 
 
@@ -161,8 +171,10 @@ def float32_variable_storage_getter(getter, name, shape=None, dtype=None,
 
 
 def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_dense_block=6,
-                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3, median_filter=False):
+                    growth_rate=16, nb_filter=48, nb_layers_per_block=5, p=None, wd=0., training=True, batchnorm=False, dtype=tf.float16, filter_sz=3, median_filter=False, data_format='channels_first'):
 
+    channels_axis = 1 if data_format=='channels_first' else -1
+    
     if type(nb_layers_per_block) is list or type(nb_layers_per_block) is tuple:
         nb_layers = list(nb_layers_per_block)
     else: nb_layers = [nb_layers_per_block] * nb_dense_block
@@ -173,9 +185,9 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             print("START CONV-IN: input_size={}, num_filters={}, filter_size={}".format(img_input.shape, nb_filter, filter_sz))
 
         with tf.variable_scope("conv_input") as scope:
-            x = conv(img_input, nb_filter, sz=filter_sz, wd=wd)
+            x = conv(img_input, nb_filter, sz=filter_sz, wd=wd, data_format=data_format)
             if batchnorm:
-                x = tf.layers.batch_normalization(x, axis=1, training=training)
+                x = tf.layers.batch_normalization(x, axis=channels_axis, training=training)
             x = tf.nn.relu(x)
             if p: x = tf.layers.dropout(x, rate=p, training=training)
 
@@ -183,20 +195,27 @@ def create_tiramisu(nb_classes, img_input, height, width, nc, loss_weights, nb_d
             print("END CONV-IN: output_size={}\n".format(x.shape))
 
         with tf.name_scope("down_path") as scope:
-            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
+            skips,added = down_path(x, nb_layers, growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz, data_format=data_format)
 
         with tf.name_scope("up_path") as scope:
-            x = up_path(added, reverse(skips[:-1]), reverse(nb_layers[:-1]), growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz)
+            x = up_path(added, reverse(skips[:-1]), reverse(nb_layers[:-1]), growth_rate, p, wd, training=training, bn=batchnorm, filter_sz=filter_sz, data_format=data_format)
 
         if print_topology:
             print("START CONV-OUT: input_size={}, num_filters={}, filter_size={}".format(x.shape, nb_classes, 1))
 
         with tf.name_scope("conv_output") as scope:
-            x = conv(x,nb_classes,sz=1,wd=wd)
+            x = conv(x,nb_classes,sz=1,wd=wd,data_format=data_format)
             if p: x = tf.layers.dropout(x, rate=p, training=training)
-            _,f,r,c = x.get_shape().as_list()
-        #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
-        x = ensure_type(tf.transpose(x,[0,2,3,1]), tf.float32) #necessary because sparse softmax cross entropy does softmax over last axis
+            if data_format == 'channels_first':
+                _,f,r,c = x.get_shape().as_list()
+            else:
+                _,r,c,f = x.get_shape().as_list()
+                #x = tf.reshape(x,[-1,nb_classes,image_height,image_width]) #nb_classes was last before
+                
+        if data_format == 'channels_first':
+            x = ensure_type(tf.transpose(x,[0,2,3,1]), tf.float32) #necessary because sparse softmax cross entropy does softmax over last axis
+        else:
+            x = ensure_type(x, tf.float32)
 
         if print_topology:
             print("END CONV-OUT: output_size={}\n".format(x.shape))

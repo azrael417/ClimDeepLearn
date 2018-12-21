@@ -53,7 +53,7 @@ class StoreDictKeyPair(argparse.Action):
         setattr(namespace, self.dest, my_dict)
 
 #main function
-def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, fs_type, batch, batchnorm, dtype, filter_sz, growth, scale_factor):
+def main(input_path_test, downsampling_fact, downsampling_mode, channels, data_format, label_id, blocks, weights, image_dir, checkpoint_dir, output_graph_file, tst_sz, loss_type, fs_type, batch, batchnorm, dtype, filter_sz, growth, scale_factor):
 
     #init horovod
     comm_rank = 0
@@ -116,7 +116,44 @@ def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkp
                                                         (batch))
                                                        )
         next_elem = iterator.get_next()
-
+        
+        #if downsampling, do some preprocessing
+        if downsampling_fact != 1:
+            if downsampling_mode == "scale":
+                #do downsampling
+                rand_select = tf.cast(tf.one_hot(tf.random_uniform((batch, image_height, image_width), minval=0, maxval=downsampling_fact*downsampling_fact, dtype=tf.int32), depth=downsampling_fact*downsampling_fact, axis=-1), dtype=tf.int32)
+                next_elem = (tf.layers.average_pooling2d(next_elem[0], downsampling_fact, downsampling_fact, 'valid', data_format), \
+                             tf.reduce_max(tf.multiply(tf.image.extract_image_patches(tf.expand_dims(next_elem[1], axis=-1), \
+                                                                                 [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                 [1, downsampling_fact, downsampling_fact, 1], \
+                                                                                 [1,1,1,1], 'VALID'), rand_select), axis=-1), \
+                             tf.squeeze(tf.layers.average_pooling2d(tf.expand_dims(next_elem[2], axis=-1), downsampling_fact, downsampling_fact, 'valid', "channels_last"), axis=-1), \
+                             next_elem[3])
+            elif downsampling_mode == "center-crop":
+                #some parameters
+                length = 1./float(downsampling_fact)
+                offset = length/2.
+                boxes = [[ offset, offset, offset+length, offset+length ]]*batch
+                box_ind = list(range(0,batch))
+                crop_size = [image_height, image_width]
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem = (tf.transpose(next_elem[0], perm=[0,2,3,1]), next_elem[1], next_elem[2], next_elem[3])
+                    
+                #crop
+                next_elem = (tf.image.crop_and_resize(next_elem[0], boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="data_cropping"), \
+                             ensure_type(tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[1],axis=-1), boxes, box_ind, crop_size, method='nearest', extrapolation_value=0, name="label_cropping"), axis=-1), tf.int32), \
+                             tf.squeeze(tf.image.crop_and_resize(tf.expand_dims(next_elem[2],axis=-1), boxes, box_ind, crop_size, method='bilinear', extrapolation_value=0, name="weight_cropping"), axis=-1), \
+                             next_elem[3])
+                
+                #be careful with data order
+                if data_format=="channels_first":
+                    next_elem = (tf.transpose(next_elem[0], perm=[0,3,1,2]), next_elem[1], next_elem[2], next_elem[3])
+                    
+            else:
+                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, scale]".format(downsampling_mode))
+        
         #create init handles
         #trn
         tst_iterator = tst_dataset.make_initializable_iterator()
@@ -132,7 +169,7 @@ def main(input_path_test, channels, label_id, blocks, weights, image_dir, checkp
                                             num_channels, loss_weights=weights, \
                                             nb_layers_per_block=blocks, p=0.2, wd=1e-4, \
                                             dtype=dtype, batchnorm=batchnorm, growth_rate=growth, \
-                                            nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False)
+                                            nb_filter=nb_filter, filter_sz=filter_sz, median_filter=False, data_format=data_format)
         #prediction_argmax = median_pool(prediction_argmax, 3, strides=[1,1,1,1])
 
         #set up loss
@@ -236,6 +273,8 @@ if __name__ == '__main__':
     AP.add_argument("--output_graph",type=str,default=None,help="Filename of the compressed inference graph.")
     AP.add_argument("--test_size",type=int,default=-1,help="How many samples do you want to use for testing?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
+    AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
+    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop].")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_test",type=str,help="Path to test data")
     AP.add_argument("--channels",default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],type=int, nargs='*',help="Channels from input images fed to the network. List of numbers between 0 and 15")
@@ -246,6 +285,7 @@ if __name__ == '__main__':
     AP.add_argument("--filter-sz",type=int,default=3,help="Convolution filter size")
     AP.add_argument("--growth",type=int,default=16,help="Channel growth rate per layer")
     AP.add_argument("--scale_factor",default=0.1,type=float,help="Factor used to scale loss. ")
+    AP.add_argument("--data_format", default="channels_first",help="Which data format shall be picked [channels_first, channels_last].")
     AP.add_argument("--label_id", type=int, default=None, help="Allows to select a certain label out of a multi-channel labeled data, \
                     where each channel presents a different label (e.g. for fuzzy labels). \
                     If set to None, the selection will be randomized [None].")
@@ -260,7 +300,10 @@ if __name__ == '__main__':
 
     #invoke main function
     main(input_path_test=parsed.datadir_test,
+         downsampling_fact=parsed.downsampling,
+         downsampling_mode=parsed.downsampling_mode,
          channels=parsed.channels,
+         data_format=parsed.data_format,
          label_id=parsed.label_id,
          blocks=parsed.blocks,
          weights=weights,
