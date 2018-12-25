@@ -6,7 +6,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
 #directories
 datadir=/mnt/data

@@ -40,8 +40,8 @@ from common_helpers import *
 from data_helpers import *
 
 #GLOBAL CONSTANTS
-image_height =  768
-image_width = 1152
+image_height_orig = 768
+image_width_orig = 1152
 
 
 class StoreDictKeyPair(argparse.Action):
@@ -98,6 +98,10 @@ def main(input_path_test, downsampling_fact, downsampling_mode, channels, data_f
     else:
         num_samples = tst_data.shape[0] // comm_size
 
+    #downsampling? recompute image dims
+    image_height =  image_height_orig // downsampling_fact
+    image_width = image_width_orig // downsampling_fact
+        
     with test_graph.as_default():
         #create readers
         tst_reader = h5_input_reader(input_path_test, channels, weights, dtype, normalization_file="stats.h5", update_on_read=False, label_id=label_id)
