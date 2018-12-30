@@ -54,7 +54,7 @@ if [ ${train} -eq 1 ]; then
                                         --validation_size ${numfiles_validation} \
                                         --chkpt_dir checkpoint.fp32.lag${lag} \
 					--downsampling ${downsampling} \
-                                        --downsampling_mode "random-crop" \
+                                        --downsampling_mode "center-crop" \
                                         --disable_imsave \
                                         --epochs 20 \
                                         --fs local \
@@ -62,7 +62,6 @@ if [ ${train} -eq 1 ]; then
                                         --blocks 2 2 2 4 5 \
                                         --growth 32 \
                                         --filter-sz 5 \
-					--use_batchnorm \
                                         --loss weighted \
                                         --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                         --scale_factor 1.0 \
@@ -91,7 +90,6 @@ if [ ${test} -eq 1 ]; then
 					   --blocks 2 2 2 4 5 \
 					   --growth 32 \
 					   --filter-sz 5 \
-					   --use_batchnorm \
                                            --loss weighted \
                                            --scale_factor 1.0 \
                                            --batch ${batch} \

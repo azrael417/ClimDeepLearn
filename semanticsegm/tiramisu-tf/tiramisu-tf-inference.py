@@ -114,9 +114,9 @@ def main(input_path_test, downsampling_fact, downsampling_mode, channels, data_f
         #create iterators
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
-                                                       ((batch, len(channels), image_height, image_width),
-                                                        (batch, image_height, image_width),
-                                                        (batch, image_height, image_width),
+                                                       ((batch, len(channels), image_height_orig, image_width_orig),
+                                                        (batch, image_height_orig, image_width_orig),
+                                                        (batch, image_height_orig, image_width_orig),
                                                         (batch))
                                                        )
         next_elem = iterator.get_next()
