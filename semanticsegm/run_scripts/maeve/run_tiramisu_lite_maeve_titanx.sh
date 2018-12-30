@@ -6,7 +6,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 
 #directories
 datadir=/mnt/data
@@ -18,7 +18,7 @@ downsampling=4
 batch=16
 
 #create run dir
-run_dir=/mnt/runs/tiramisu/run_ngpus1
+run_dir=/mnt/runs/tiramisu/run4_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -37,7 +37,7 @@ cd ${run_dir}
 
 #some parameters
 lag=0
-train=0
+train=1
 test=1
 
 if [ ${train} -eq 1 ]; then
@@ -54,7 +54,7 @@ if [ ${train} -eq 1 ]; then
                                         --validation_size ${numfiles_validation} \
                                         --chkpt_dir checkpoint.fp32.lag${lag} \
 					--downsampling ${downsampling} \
-                                        --downsampling_mode "center-crop" \
+                                        --downsampling_mode "random-crop" \
                                         --disable_imsave \
                                         --epochs 20 \
                                         --fs local \
@@ -62,6 +62,7 @@ if [ ${train} -eq 1 ]; then
                                         --blocks 2 2 2 4 5 \
                                         --growth 32 \
                                         --filter-sz 5 \
+					--use_batchnorm \
                                         --loss weighted \
                                         --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                         --scale_factor 1.0 \
@@ -90,6 +91,7 @@ if [ ${test} -eq 1 ]; then
 					   --blocks 2 2 2 4 5 \
 					   --growth 32 \
 					   --filter-sz 5 \
+					   --use_batchnorm \
                                            --loss weighted \
                                            --scale_factor 1.0 \
                                            --batch ${batch} \

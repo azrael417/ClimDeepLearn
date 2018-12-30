@@ -137,6 +137,8 @@ def main(input_path_train, input_path_validation, downsampling_fact, downsamplin
         print("Num validation samples: {}".format(val_data.shape[0]))
         print("Disable checkpoints: {}".format(disable_checkpoints))
         print("Disable image save: {}".format(disable_imsave))
+        print("Downsampling factor: {}".format(downsampling_fact))
+        print("Downsampling mode: {}".format(downsampling_mode))
 
     #compute epochs and stuff:
     if fs_type == "local":
@@ -165,8 +167,8 @@ def main(input_path_train, input_path_validation, downsampling_fact, downsamplin
         handle = tf.placeholder(tf.string, shape=[], name="iterator-placeholder")
         iterator = tf.data.Iterator.from_string_handle(handle, (dtype, tf.int32, dtype, tf.string),
                                                        ((batch, len(channels), image_height_orig, image_width_orig) if data_format=="channels_first" else (batch, image_height_orig, image_width_orig, len(channels)),
-                                                        (batch, image_height, image_width),
-                                                        (batch, image_height, image_width),
+                                                        (batch, image_height_orig, image_width_orig),
+                                                        (batch, image_height_orig, image_width_orig),
                                                         (batch))
                                                        )
         next_elem = iterator.get_next()
@@ -205,8 +207,26 @@ def main(input_path_train, input_path_validation, downsampling_fact, downsamplin
                 if data_format=="channels_first":
                     next_elem = (tf.transpose(next_elem[0], perm=[0,3,1,2]), next_elem[1], next_elem[2], next_elem[3])
                     
+            elif downsampling_mode == "random-crop":
+                #some parameters
+                crop_size = [batch, image_height, image_width, len(channels)+2]
+                
+                #concatenate input, crop, split apart
+                crop_input = tf.concat([next_elem[0] if data_format=="channels_last" else tf.transpose(next_elem[0], perm=[0,2,3,1]), \
+                                        ensure_type(tf.expand_dims(next_elem[1], axis=-1), tf.float32), \
+                                        tf.expand_dims(next_elem[2], axis=-1)], \
+                                       axis = -1)
+                crop_output = tf.image.random_crop(crop_input, crop_size)
+
+                #restore iterator output
+                crop_image = crop_output[:,:,:,:len(channels)]
+                crop_label = ensure_type(crop_output[:,:,:,len(channels)], tf.int32)
+                crop_weight = crop_output[:,:,:,len(channels)+1]
+                next_elem = (crop_image if data_format=="channels_last" else tf.transpose(crop_image, perm=[0,3,1,2]), \
+                             crop_label, crop_weight, next_elem[3])
+                    
             else:
-                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, scale]".format(downsampling_mode))
+                raise ValueError("Error, downsampling mode {} not supported. Supported are [center-crop, random-crop, scale]".format(downsampling_mode))
         
         #create init handles
         #trn
@@ -470,7 +490,7 @@ if __name__ == '__main__':
     AP.add_argument("--validation_size",type=int,default=-1,help="How many samples do you want to use for validation?")
     AP.add_argument("--frequencies",default=[0.991,0.0266,0.13],type=float, nargs='*',help="Frequencies per class used for reweighting")
     AP.add_argument("--downsampling",default=1,type=int,help="Downsampling factor for image resolution reduction.")
-    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop].")
+    AP.add_argument("--downsampling_mode",default="scale",type=str,help="Which mode to use [scale, center-crop, random-crop].")
     AP.add_argument("--loss",default="weighted",choices=["weighted","focal"],type=str, help="Which loss type to use. Supports weighted, focal [weighted]")
     AP.add_argument("--datadir_train",type=str,help="Path to training data")
     AP.add_argument("--datadir_validation",type=str,help="Path to validation data")
