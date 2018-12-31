@@ -8,17 +8,21 @@ export OMP_PROC_BIND=spread
 #pick GPU
 export CUDA_VISIBLE_DEVICES=2
 
-#directories
+#directories and files
 datadir=/mnt/data
 scratchdir=/mnt/data
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
+
+#network parameters
 downsampling=4
 batch=16
+#blocks="2 2 2 4 5"
+blocks="3 3 4 4 7 7"
 
 #create run dir
-run_dir=/mnt/runs/tiramisu/run4_ngpus1
+run_dir=/mnt/runs/tiramisu/run2_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -59,13 +63,14 @@ if [ ${train} -eq 1 ]; then
                                         --epochs 20 \
                                         --fs local \
                                         --channels 0 1 2 10 \
-                                        --blocks 2 2 2 4 5 \
+                                        --blocks ${blocks} \
                                         --growth 32 \
                                         --filter-sz 5 \
                                         --loss weighted \
                                         --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                         --scale_factor 1.0 \
                                         --batch ${batch} \
+					--use_batchnorm \
                                         --label_id 0 \
 					--data_format "channels_first" |& tee out.lite.fp32.lag${lag}.train.run${runid}
 fi
@@ -87,12 +92,13 @@ if [ ${test} -eq 1 ]; then
 					   --output_graph tiramisu_inference.pb \
                                            --output output_test \
                                            --fs local \
-					   --blocks 2 2 2 4 5 \
+					   --blocks ${blocks} \
 					   --growth 32 \
 					   --filter-sz 5 \
                                            --loss weighted \
                                            --scale_factor 1.0 \
                                            --batch ${batch} \
+					   --use_batchnorm \
                                            --label_id 0 \
                                            --data_format "channels_first" |& tee out.lite.fp32.lag${lag}.test.run${runid}
 fi

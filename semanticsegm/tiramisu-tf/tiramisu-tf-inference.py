@@ -271,7 +271,7 @@ def main(input_path_test, downsampling_fact, downsampling_mode, channels, data_f
 
 if __name__ == '__main__':
     AP = argparse.ArgumentParser()
-    AP.add_argument("--blocks",default=[3,3,4,4,7,7,10],type=int,nargs="*",help="Number of layers per block")
+    AP.add_argument("--blocks",default=[3,3,4,4,7,7],type=int,nargs="*",help="Number of layers per block")
     AP.add_argument("--output",type=str,default='output',help="Defines the location and name of output directory")
     AP.add_argument("--chkpt_dir",type=str,default='checkpoint',help="Defines the location and name of the checkpoint file")
     AP.add_argument("--output_graph",type=str,default=None,help="Filename of the compressed inference graph.")
