@@ -17,12 +17,12 @@ numfiles_test=500
 
 #network parameters
 downsampling=4
-batch=16
+batch=8
 #blocks="2 2 2 4 5"
 blocks="3 3 4 4 7 7"
 
 #create run dir
-run_dir=/mnt/runs/tiramisu/run2_ngpus1
+run_dir=/mnt/runs/tiramisu/run1_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
