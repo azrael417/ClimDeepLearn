@@ -6,7 +6,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 #directories and files
 datadir=/mnt/data
@@ -18,8 +18,8 @@ numfiles_test=500
 #network parameters
 downsampling=4
 batch=8
-#blocks="2 2 2 4 5"
-blocks="3 3 4 4 7 7"
+blocks="2 2 2 4 5"
+#blocks="3 3 4 4 7 7"
 
 #create run dir
 run_dir=/mnt/runs/tiramisu/run1_ngpus1
@@ -44,42 +44,52 @@ lag=0
 train=1
 test=0
 
-#profiling string
-profilestring="nvprof --metrics flop_count_sp,sysmem_read_transactions,sysmem_write_transactions,dram_read_transactions,dram_write_transactions,l2_read_transactions,l2_write_transactions,gld_transactions,gst_transactions"
+#list of metrics
+#metrics="time flop_count_sp sysmem_read_transactions sysmem_write_transactions dram_read_transactions dram_write_transactions l2_read_transactions l2_write_transactions gld_transactions gst_transactions"
+metrics="time flop_count_sp gld_transactions gst_transactions"
 
 if [ ${train} -eq 1 ]; then
-  echo "Starting Training"
-  runid=0
-  runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.run* | tail -n1 | awk '{print $9}')
-  if [ ! -z ${runfiles} ]; then
-      runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
-  fi
+    for metric in ${metrics}; do
+      metricname=${metric//,/-}
+      echo "Starting Training Profiling for Metric ${metric}"
+      if [ "${metric}" == "time" ]; then
+	  profilestring="nvprof"
+      else
+	  profilestring="nvprof --metrics ${metric}"
+      fi
+      runid=0
+      runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.${metricname}.run* | tail -n1 | awk '{print $9}')
+      if [ ! -z ${runfiles} ]; then
+	  runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
+      fi
 
-  #set profile string
-  profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.nvprof"
+      #set profile string
+      profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.${metricname}.nvprof"
+      #profilestring=${profilestring}" --csv"
   
-  ${profilestring} python -u ./tiramisu-tf-train.py      --datadir_train ${scratchdir}/train \
-                                                         --train_size $(( ${batch} * 10 )) \
-							 --datadir_validation ${scratchdir}/validation \
-							 --validation_size ${numfiles_validation} \
-							 --disable_checkpoints \
-							 --chkpt_dir checkpoint.fp32.lag${lag} \
-							 --downsampling ${downsampling} \
-							 --downsampling_mode "center-crop" \
-							 --disable_imsave \
-							 --epochs 1 \
-							 --fs local \
-							 --channels 0 1 2 10 \
-							 --blocks ${blocks} \
-							 --growth 32 \
-							 --filter-sz 5 \
-							 --loss weighted \
-							 --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
-							 --scale_factor 1.0 \
-							 --batch ${batch} \
-							 --use_batchnorm \
-							 --label_id 0 \
-							 --data_format "channels_first" |& tee out.lite.fp32.lag${lag}.train.run${runid}
+      ${profilestring} python -u ./tiramisu-tf-train.py      --datadir_train ${scratchdir}/train \
+                                                             --train_size $(( ${batch} * 3 )) \
+							     --datadir_validation ${scratchdir}/validation \
+							     --validation_size ${numfiles_validation} \
+							     --disable_checkpoints \
+							     --chkpt_dir checkpoint.fp32.lag${lag} \
+							     --downsampling ${downsampling} \
+							     --downsampling_mode "center-crop" \
+							     --disable_imsave \
+							     --epochs 1 \
+							     --fs local \
+							     --channels 0 1 2 10 \
+							     --blocks ${blocks} \
+							     --growth 32 \
+							     --filter-sz 5 \
+							     --loss weighted \
+							     --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
+							     --scale_factor 1.0 \
+							     --batch ${batch} \
+							     --use_batchnorm \
+							     --label_id 0 \
+							     --data_format "channels_first" |& tee out.lite.fp32.lag${lag}.train.${metricname}.run${runid}
+    done
 fi
 
 if [ ${test} -eq 1 ]; then
