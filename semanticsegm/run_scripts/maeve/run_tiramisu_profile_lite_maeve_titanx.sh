@@ -46,7 +46,7 @@ test=0
 
 #list of metrics
 #metrics="time flop_count_sp sysmem_read_transactions sysmem_write_transactions dram_read_transactions dram_write_transactions l2_read_transactions l2_write_transactions gld_transactions gst_transactions"
-metrics="time flop_count_sp gld_transactions gst_transactions"
+metrics="time"
 
 if [ ${train} -eq 1 ]; then
     for metric in ${metrics}; do

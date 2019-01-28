@@ -6,7 +6,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 #pick GPU
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 
 #directories and files
 datadir=/mnt/data
@@ -22,7 +22,7 @@ batch=8
 blocks="3 3 4 4 7 7"
 
 #create run dir
-run_dir=/mnt/runs/tiramisu/run1_ngpus1
+run_dir=/mnt/runs/tiramisu/run2_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
