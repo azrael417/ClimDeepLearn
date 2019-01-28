@@ -30,7 +30,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname], [dtype, tf.int32, dtype, tf.string])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -171,7 +171,7 @@ class h5_input_reader(object):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path, datafile)
-        begin_time = time.time()
+        #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
         data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, self.label_id, shared_slot))
@@ -181,15 +181,15 @@ class h5_input_reader(object):
         data, label, weights = smem.unpack_arrays(shared_slot, data, label, weights)
         smem.return_slot(shared_slot)
         #nvtx.RangePop()
-        end_time = time.time()
-        print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
+        #end_time = time.time()
+        #print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
         return data, label, weights, path
 
     def sequential_read(self, datafile):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path,datafile)
-        begin_time = time.time()
+        #begin_time = time.time()
         with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
@@ -236,8 +236,8 @@ class h5_input_reader(object):
             weights = self.weights[label]
 
         #time
-        end_time = time.time()
-        print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
+        #end_time = time.time()
+        #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
 
         return data, label, weights, path
 
