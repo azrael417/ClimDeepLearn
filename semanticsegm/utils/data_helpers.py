@@ -182,7 +182,7 @@ class h5_input_reader(object):
         smem.return_slot(shared_slot)
         #nvtx.RangePop()
         end_time = time.time()
-        print("Time to read parallel %s = %.3f s" % (path, end_time-begin_time))
+        print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
         return data, label, weights, path
 
     def sequential_read(self, datafile):
@@ -237,7 +237,7 @@ class h5_input_reader(object):
 
         #time
         end_time = time.time()
-        print("Time to read sequential %s = %.3f s" % (path, end_time-begin_time))
+        print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
 
         return data, label, weights, path
 
