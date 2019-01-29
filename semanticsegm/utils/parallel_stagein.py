@@ -58,15 +58,15 @@ class ClimateFileCopier(object):
         # if a channel list is available, use just those
         if self.channels:
             data = data[self.channels,:,:]
-        # convert data to desired type, reduce labels to int8
-        data = data.astype(self.dtype)
-        labels = labels.astype(np.int8)
+        # convert data to desired type, reduce labels to int8: ofloaded to library
+        #data = data.astype(self.dtype)
+        #labels = labels.astype(np.int8)
 
         # now write a new file
         with h5py.File(dstfile, 'w', driver='core', libver='latest') as f:
             c = f.create_group('climate')
-            c.create_dataset('data', data=data)
-            c.create_dataset('labels', data=labels)
+            c.create_dataset('data', data=data, dtype=self.dtype)
+            c.create_dataset('labels', data=labels, dtype=np.int8)
             if self.channels:
                 c.create_dataset('channels',
                                  data=np.array(self.channels, dtype=np.int32))

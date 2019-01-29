@@ -64,7 +64,6 @@ if [ ${stage} -eq 1 ]; then
 cmd="srun --mpi=pmi2 -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 80 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation} ${numfiles_test}"
 echo ${cmd}
 ${cmd}
-exit
 fi
 
 #train

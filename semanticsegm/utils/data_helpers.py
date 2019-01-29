@@ -96,17 +96,18 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
             channel_list = list(f['climate']['channels'])
             channels = [ channel_list.index(c) for c in channels ]
 
-        data = f['climate']['data'][channels,:,:].astype(np.float32)
-
-        #do min/max normalization
-        for c in range(len(channels)):
-            data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
-
-        if data_format == "channels_last":
-            data = np.transpose(data, [1,2,0])
+        data = f['climate']['data'][channels,:,:]
 
         #get label
         label = f['climate']['labels'][...]
+
+    #do min/max normalization
+    for c in range(len(channels)):
+        data[c,:,:] = (data[c,:,:]-minvals[c])/(maxvals[c]-minvals[c])
+    
+    #transpose if necessary
+    if data_format == "channels_last":
+        data = np.transpose(data, [1,2,0])
 
     #if new dataset is used, label has a batch index.
     #just take the first entry for the moment

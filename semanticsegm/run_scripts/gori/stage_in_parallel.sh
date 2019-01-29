@@ -20,7 +20,7 @@ fi
 
 #training and validation in one go
 #convert mode "climate:" very slow due to poor hdf5 performance
-cmd="python ./parallel_stagein.py --targets ${2}/train ${2}/validation ${2}/test --cvt "climate:" --workers 4 --seed 7919 --counts ${3} ${4} ${5} --mkdir ${1}/train ${1}/validation ${1}/test"
+cmd="python ./parallel_stagein.py --targets ${2}/train ${2}/validation ${2}/test --cvt "climate:" --workers 8 --seed 7919 --counts ${3} ${4} ${5} --mkdir ${1}/train ${1}/validation ${1}/test"
 #echo ${cmd}
 ${cmd}
 cp ${1}/stats.h5 ${2}/train/
