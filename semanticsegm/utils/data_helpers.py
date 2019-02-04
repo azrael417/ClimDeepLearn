@@ -200,9 +200,12 @@ class h5_input_reader(object):
                 self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
             data = f['climate']['data'][self.channels,:,:].astype(self.dtype)
+            timers["io_data"] = timers["total"] + time.time()
 
             #get label
+            timers["io_label"] = -time.time()
             label = f['climate']['labels'][...].astype(np.int32)
+            timers["io_label"] += time.time()
         timers["io"] = timers["total"] + time.time()
         
         #do min/max normalization
