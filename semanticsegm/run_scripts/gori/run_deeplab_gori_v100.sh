@@ -73,24 +73,25 @@ if [ ${train} -eq 1 ]; then
                                        --train_size ${numfiles_train} \
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
-                                       --chkpt_dir checkpoint.fp16.lag${lag} \
+                                       --chkpt_dir checkpoint.fp32.lag${lag} \
                                        --epochs 20 \
                                        --fs local \
                                        --loss weighted_mean \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                        --model=resnet_v2_50 \
                                        --scale_factor 1.0 \
-                                       --batch 2 \
+                                       --batch 1 \
                                        --decoder deconv1x \
-                                       --dtype float16 \
+                                       --device "/device:cpu:0" \
+                                       --dtype float32 \
 				       --label_id 0 \
-                                       --data_format "channels_first" |& tee out.fp16.lag${lag}.train
+                                       --data_format "channels_last" |& tee out.fp32.lag${lag}.train
 fi
 
 if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   ${sruncmd} python -u ./deeplab-tf-inference.py      --datadir_test ${scratchdir}/test \
-                                           --chkpt_dir checkpoint.fp16.lag${lag} \
+                                           --chkpt_dir checkpoint.fp32.lag${lag} \
 					   --test_size -1 \
 					   --output_graph deepcam_inference.pb \
                                            --output output_test_5 \
@@ -98,10 +99,10 @@ if [ ${test} -eq 1 ]; then
                                            --loss weighted_mean \
                                            --model=resnet_v2_50 \
                                            --scale_factor 1.0 \
-                                           --batch 2 \
+                                           --batch 1 \
                                            --decoder deconv1x \
                                            --device "/device:cpu:0" \
-                                           --dtype float16 \
+                                           --dtype float32 \
 					   --label_id 0 \
-                                           --data_format "channels_first" |& tee out.fp16.lag${lag}.test
+                                           --data_format "channels_last" |& tee out.fp32.lag${lag}.test
 fi

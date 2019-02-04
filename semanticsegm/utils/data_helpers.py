@@ -30,7 +30,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -96,10 +96,10 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
             channel_list = list(f['climate']['channels'])
             channels = [ channel_list.index(c) for c in channels ]
 
-        data = f['climate']['data'][channels,:,:]
+        data = f['climate']['data'][channels,:,:].astype(dtype)
 
         #get label
-        label = f['climate']['labels'][...]
+        label = f['climate']['labels'][...].astype(np.int32)
 
     #do min/max normalization
     for c in range(len(channels)):
@@ -116,11 +116,11 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         label = label[chan,:,:]
 
     # cast data and labels if needed
-    if data.dtype != dtype:
-        data = data.astype(dtype)
+    #if data.dtype != dtype:
+    #    data = data.astype(dtype)
 
-    if label.dtype != np.int32:
-        label = label.astype(np.int32)
+    #if label.dtype != np.int32:
+    #    label = label.astype(np.int32)
 
     if sample_target is not None:
         # determine the number of pixels in each of the three classes
@@ -172,7 +172,7 @@ class h5_input_reader(object):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path, datafile)
-        #begin_time = time.time()
+        begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
         shared_slot = smem.get_free_slot()
         data, label, weights, new_minvals, new_maxvals = self.pool.apply(_h5_input_subprocess_reader, (path, self.channels, self.weights, self.minvals, self.maxvals, self.update_on_read, self.dtype, self.data_format, self.sample_target, self.label_id, shared_slot))
@@ -182,22 +182,22 @@ class h5_input_reader(object):
         data, label, weights = smem.unpack_arrays(shared_slot, data, label, weights)
         smem.return_slot(shared_slot)
         #nvtx.RangePop()
-        #end_time = time.time()
-        #print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
+        end_time = time.time()
+        print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
         return data, label, weights, path
 
     def sequential_read(self, datafile):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path,datafile)
-        #begin_time = time.time()
+        begin_time = time.time()
         with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
                 self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
                 self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
-            data = f['climate']['data'][self.channels,:,:].astype(np.float32)
+            data = f['climate']['data'][self.channels,:,:].astype(self.dtype)
             #do min/max normalization
             for c in range(len(self.channels)):
                 data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
@@ -215,12 +215,12 @@ class h5_input_reader(object):
             chan = self.label_id if self.label_id else np.random.randint(low=0, high=label.shape[0])
             label = label[chan,:,:]
 
-        # cast data and labels if needed
-        if data.dtype != self.dtype:
-            data = data.astype(self.dtype)
+        ## cast data and labels if needed
+        #if data.dtype != self.dtype:
+        #    data = data.astype(self.dtype)
 
-        if label.dtype != np.int32:
-            label = label.astype(np.int32)
+        #if label.dtype != np.int32:
+        #    label = label.astype(np.int32)
 
         if self.sample_target is not None:
             # determine the number of pixels in each of the three classes
@@ -237,8 +237,8 @@ class h5_input_reader(object):
             weights = self.weights[label]
 
         #time
-        #end_time = time.time()
-        #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
+        end_time = time.time()
+        print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
 
         return data, label, weights, path
 
