@@ -30,7 +30,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname, True], [dtype, tf.int32, dtype, tf.string])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname, False], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
