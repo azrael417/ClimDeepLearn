@@ -66,7 +66,7 @@ class ClimateFileCopier(object):
         with h5py.File(dstfile, 'w', driver='core', libver='latest') as f:
             c = f.create_group('climate')
             c.create_dataset('data', data=data, dtype=self.dtype)
-            c.create_dataset('labels', data=labels, dtype=np.int8)
+            c.create_dataset('labels', data=labels, dtype=np.int32)
             if self.channels:
                 c.create_dataset('channels',
                                  data=np.array(self.channels, dtype=np.int32))

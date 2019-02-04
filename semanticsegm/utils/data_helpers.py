@@ -198,16 +198,17 @@ class h5_input_reader(object):
                 self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
             data = f['climate']['data'][self.channels,:,:].astype(self.dtype)
-            #do min/max normalization
-            for c in range(len(self.channels)):
-                data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-
-            if self.data_format == "channels_last":
-                data = np.transpose(data, [1,2,0])
 
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
 
+
+        #do min/max normalization
+        for c in range(len(self.channels)):
+            data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
+
+        if self.data_format == "channels_last":
+            data = np.transpose(data, [1,2,0])
 
         #if new dataset is used, label has a batch index.
         #just take the first entry for the moment
