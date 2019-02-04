@@ -192,7 +192,7 @@ class h5_input_reader(object):
         path = os.path.join(self.path,datafile)
         
         timers = {}
-        timers["begin"] = time.time()
+        timers["begin"] = -time.time()
         with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
@@ -203,26 +203,26 @@ class h5_input_reader(object):
 
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
-        timers["io"] = timers["begin"] - time.time()
+        timers["io"] = timers["begin"] + time.time()
         
         #do min/max normalization
-        norm_time = time.time()
+        timers["norm"] = -time.time()
         for c in range(len(self.channels)):
             data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-        norm_time -= time.time()
+        timers["norm"] += time.time()
 
-        transpose_time = time.time()
+        timers["transpose"] = -time.time()
         if self.data_format == "channels_last":
             data = np.transpose(data, [1,2,0])
-        transpose_time -= time.time()
+        timers["transpose"] += time.time()
 
         #if new dataset is used, label has a batch index.
         #just take the first entry for the moment
-        select_time = time.time()
+        timers["select_channels"] = -time.time()
         if label.ndim == 3:
             chan = self.label_id if self.label_id else np.random.randint(low=0, high=label.shape[0])
             label = label[chan,:,:]
-        select_time -= time.time()
+        timers["select_channels"] += time.time()
 
         ## cast data and labels if needed
         #if data.dtype != self.dtype:
@@ -246,8 +246,11 @@ class h5_input_reader(object):
             weights = self.weights[label]
 
         #time
-        timers["begin"] -= time.time()
-        print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
+        timers["begin"] += time.time()
+        #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
+        for key, val in timers.items():
+            print("READ: %s = %.3f s"%(key, val))
+        print("\n")
 
         return data, label, weights, path
 
