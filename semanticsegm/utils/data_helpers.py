@@ -30,7 +30,7 @@ def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_ra
         dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
     if shuffle:
         dataset = dataset.shuffle(buffer_size=100)
-    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname], [dtype, tf.int32, dtype, tf.string])),
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.sequential_read, [dataname, True], [dtype, tf.int32, dtype, tf.string])),
                           num_parallel_calls = 4)
     dataset = dataset.prefetch(16)
     # make sure all batches are equal in size
@@ -168,7 +168,7 @@ class h5_input_reader(object):
     pool = multiprocessing.Pool(processes=4)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    def read(self, datafile):
+    def read(self, datafile, profile=False):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path, datafile)
@@ -186,57 +186,59 @@ class h5_input_reader(object):
         print("Time to read in parallel %s = %.3f s" % (path, end_time-begin_time))
         return data, label, weights, path
 
-    def sequential_read(self, datafile):
+    def sequential_read(self, datafile, profile=False):
         if isinstance(datafile, bytes):
             datafile = datafile.decode("utf-8")
         path = os.path.join(self.path,datafile)
         
-        timers = {}
-        timers["total"] = -time.time()
+        if profile:
+            timers = {}
+            timers["total"] = -time.time()
+
         with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
                 self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
                 self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
-            data = f['climate']['data'][self.channels,:,:] #.astype(self.dtype)
-            timers["io_data"] = timers["total"] + time.time()
+            data = f['climate']['data'][self.channels,:,:]
+            if profile: timers["io_data"] = timers["total"] + time.time()
 
             #get label
-            timers["io_label"] = -time.time()
-            label = f['climate']['labels'][...] #.astype(np.int32)
-            timers["io_label"] += time.time()
-        timers["io"] = timers["total"] + time.time()
+            if profile: timers["io_label"] = -time.time()
+            label = f['climate']['labels'][...]
+            if profile: timers["io_label"] += time.time()
+        if profile: timers["io"] = timers["total"] + time.time()
         
         #do min/max normalization
-        timers["norm"] = -time.time()
+        if profile: timers["norm"] = -time.time()
         for c in range(len(self.channels)):
             data[c,:,:] = (data[c,:,:]-self.minvals[c])/(self.maxvals[c]-self.minvals[c])
-        timers["norm"] += time.time()
+        if profile: timers["norm"] += time.time()
 
-        timers["transpose"] = -time.time()
+        if profile: timers["transpose"] = -time.time()
         if self.data_format == "channels_last":
             data = np.transpose(data, [1,2,0])
-        timers["transpose"] += time.time()
+        if profile: timers["transpose"] += time.time()
 
         #if new dataset is used, label has a batch index.
         #just take the first entry for the moment
-        timers["select_channels"] = -time.time()
+        if profile: timers["select_channels"] = -time.time()
         if label.ndim == 3:
             chan = self.label_id if self.label_id else np.random.randint(low=0, high=label.shape[0])
             label = label[chan,:,:]
-        timers["select_channels"] += time.time()
+        if profile: timers["select_channels"] += time.time()
 
         ## cast data and labels if needed
-        timers["convert_data"] = -time.time()
+        if profile: timers["convert_data"] = -time.time()
         if data.dtype != self.dtype:
             data = data.astype(self.dtype)
-        timers["convert_data"] += time.time()
+        if profile: timers["convert_data"] += time.time()
 
-        timers["convert_label"] = -time.time()
+        if profile: timers["convert_label"] = -time.time()
         if label.dtype != np.int32:
             label = label.astype(np.int32)
-        timers["convert_label"] += time.time()
+        if profile: timers["convert_label"] += time.time()
 
         if self.sample_target is not None:
             # determine the number of pixels in each of the three classes
@@ -253,11 +255,11 @@ class h5_input_reader(object):
             weights = self.weights[label]
 
         #time
-        timers["total"] += time.time()
-        #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
-        for key, val in timers.items():
-            print("READ: %s = %.3f s"%(key, val))
-        print("")
+        if profile: 
+            timers["total"] += time.time()
+            for key, val in timers.items():
+                print("READ: %s = %.3f s"%(key, val))
+            print("")
 
         return data, label, weights, path
 
