@@ -199,12 +199,12 @@ class h5_input_reader(object):
                 self.minvals = np.minimum(self.minvals, f['climate']['stats'][self.channels,0])
                 self.maxvals = np.maximum(self.maxvals, f['climate']['stats'][self.channels,1])
             #get data
-            data = f['climate']['data'][self.channels,:,:].astype(self.dtype)
+            data = f['climate']['data'][self.channels,:,:] #.astype(self.dtype)
             timers["io_data"] = timers["total"] + time.time()
 
             #get label
             timers["io_label"] = -time.time()
-            label = f['climate']['labels'][...].astype(np.int32)
+            label = f['climate']['labels'][...] #.astype(np.int32)
             timers["io_label"] += time.time()
         timers["io"] = timers["total"] + time.time()
         
@@ -228,11 +228,15 @@ class h5_input_reader(object):
         timers["select_channels"] += time.time()
 
         ## cast data and labels if needed
-        #if data.dtype != self.dtype:
-        #    data = data.astype(self.dtype)
+        timers["convert_data"] = -time.time()
+        if data.dtype != self.dtype:
+            data = data.astype(self.dtype)
+        timers["convert_data"] += time.time()
 
-        #if label.dtype != np.int32:
-        #    label = label.astype(np.int32)
+        timers["convert_label"] = -time.time()
+        if label.dtype != np.int32:
+            label = label.astype(np.int32)
+        timers["convert_label"] += time.time()
 
         if self.sample_target is not None:
             # determine the number of pixels in each of the three classes
