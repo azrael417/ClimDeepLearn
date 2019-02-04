@@ -192,7 +192,7 @@ class h5_input_reader(object):
         path = os.path.join(self.path,datafile)
         
         timers = {}
-        timers["begin"] = -time.time()
+        timers["total"] = -time.time()
         with h5.File(path, "r", driver="core", backing_store=False, libver="latest") as f:
             #get min and max values and update stored values
             if self.update_on_read:
@@ -203,7 +203,7 @@ class h5_input_reader(object):
 
             #get label
             label = f['climate']['labels'][...].astype(np.int32)
-        timers["io"] = timers["begin"] + time.time()
+        timers["io"] = timers["total"] + time.time()
         
         #do min/max normalization
         timers["norm"] = -time.time()
@@ -246,7 +246,7 @@ class h5_input_reader(object):
             weights = self.weights[label]
 
         #time
-        timers["begin"] += time.time()
+        timers["total"] += time.time()
         #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
         for key, val in timers.items():
             print("READ: %s = %.3f s"%(key, val))
