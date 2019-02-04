@@ -250,7 +250,7 @@ class h5_input_reader(object):
         #print("Time to read sequentially %s = %.3f s" % (path, end_time-begin_time))
         for key, val in timers.items():
             print("READ: %s = %.3f s"%(key, val))
-        print("\n")
+        print("")
 
         return data, label, weights, path
 
