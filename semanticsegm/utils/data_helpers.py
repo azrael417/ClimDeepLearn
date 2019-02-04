@@ -230,15 +230,15 @@ class h5_input_reader(object):
         if profile: timers["select_channels"] += time.time()
 
         ## cast data and labels if needed
-        if profile: timers["convert_data"] = -time.time()
+        if profile: timers["cast_data"] = -time.time()
         if data.dtype != self.dtype:
             data = data.astype(self.dtype)
-        if profile: timers["convert_data"] += time.time()
+        if profile: timers["cast_data"] += time.time()
 
-        if profile: timers["convert_label"] = -time.time()
+        if profile: timers["cast_label"] = -time.time()
         if label.dtype != np.int32:
             label = label.astype(np.int32)
-        if profile: timers["convert_label"] += time.time()
+        if profile: timers["cast_label"] += time.time()
 
         if self.sample_target is not None:
             # determine the number of pixels in each of the three classes
