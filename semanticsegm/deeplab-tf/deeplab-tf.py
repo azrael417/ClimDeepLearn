@@ -330,7 +330,7 @@ def deeplab_v3_plus_generator(num_classes,
                             
                             logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
                         else:
-                            print 'ERROR: unknown decoder type:', decoder
+                            print('ERROR: unknown decoder type:', decoder)
                             assert False
                         sm_logits = tf.nn.softmax(logits)
 
@@ -434,7 +434,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
         print("Cluster loss weight: {}".format(cluster_loss_weight))
         print("Output sampling target: {}".format(output_sampling))
         #print optimizer parameters
-        for k,v in optimizer.iteritems():
+        for k,v in optimizer.items():
             print("Solver Parameters: {k}: {v}".format(k=k,v=v))
         print("Num training samples: {}".format(trn_data.shape[0]))
         print("Num validation samples: {}".format(val_data.shape[0]))
@@ -546,7 +546,7 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
 
         flops *= comm_size
         if comm_rank == 0:
-            print 'training flops: {:.3f} TF/step'.format(flops * 1e-12)
+            print('training flops: {:.3f} TF/step'.format(flops * 1e-12))
 
         if horovod:
             loss_avg = hvd.allreduce(tf.cast(loss, tf.float32))

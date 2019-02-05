@@ -114,7 +114,7 @@ def get_learning_rate(optimizer, global_step, steps_per_epoch):
             global_epoch = tf.floordiv(global_step, steps_per_epoch)
             prev_scale = lambda: 1.0
             cases = []
-            for i in xrange(1,len(args),2):
+            for i in range(1,len(args),2):
                 epoch_cutoff = int(args[i])
                 cases.append((tf.less(global_epoch, epoch_cutoff),
                               prev_scale))
@@ -125,7 +125,7 @@ def get_learning_rate(optimizer, global_step, steps_per_epoch):
                                      default=prev_scale,
                                      exclusive=False)
         else:
-            print "ERROR: Unknown lr_decay mode:", lr_decay_mode
+            print("ERROR: Unknown lr_decay mode:", lr_decay_mode)
             exit(1)
 
     return learning_rate
@@ -250,8 +250,8 @@ class SharedExchangeBuffer(object):
     def __init__(self, count, size):
         self.count = count
         self.size = size
-        self.arrays = [ multiprocessing.RawArray('B', size) for x in xrange(count) ]
-        self.avail = set( xrange(count) )
+        self.arrays = [ multiprocessing.RawArray('B', size) for x in range(count) ]
+        self.avail = set( range(count) )
 
     def get_free_slot(self):
         return self.avail.pop()
@@ -307,6 +307,9 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         #get label
         label = f['climate']['labels'][...]
 
+    if label.ndim == 3:
+        label = label[0,:,:]
+
     # cast data and labels if needed
     if data.dtype != dtype:
         data = data.astype(dtype)
@@ -359,6 +362,8 @@ class h5_input_reader(object):
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     def read(self, datafile):
+        if isinstance(datafile, bytes):
+            datafile = datafile.decode("utf-8")
         path = os.path.join(self.path,datafile)
         #begin_time = time.time()
         #nvtx.RangePush('h5_input', 8)
@@ -375,7 +380,9 @@ class h5_input_reader(object):
         return data, label, weights, path
 
     def sequential_read(self, datafile):
-        
+        if isinstance(datafile, bytes):
+            datafile = datafile.decode("utf-8")
+
         #data
         #begin_time = time.time()
         path = os.path.join(self.path,datafile)
@@ -397,6 +404,9 @@ class h5_input_reader(object):
             weights = np.zeros(label.shape, dtype=np.float32)
             for idx,w in enumerate(self.weights):
                 weights[np.where(label==idx)]=w
+                
+        if label.ndim == 3:
+                label = label[0,:,:]
 
         #time
         #end_time = time.time()
@@ -406,33 +416,22 @@ class h5_input_reader(object):
 
 
 #load data routine
+#load data routine
 def load_data(input_path, shuffle=True, max_files=-1, use_horovod=True):
     #look for labels and data files
-    files = sorted([x for x in os.listdir(input_path) if x.startswith("data")])
+    files = sorted([x for x in os.listdir(input_path) if "data" in x])
 
     #we will choose to load only the first p files
     if max_files > 0:
         files = files[:max_files]
 
     #convert to numpy
-    files = np.asarray(files)
+    files = np.asarray(files, dtype=str)
 
     #PERMUTATION OF DATA
     if shuffle:
         np.random.seed(12345)
-        shufflefile = "./shuffle_indices.npy"
-        if not os.path.isfile(shufflefile):
-            shuffle_indices = np.random.permutation(len(files))
-            if use_horovod:
-                if hvd.rank() == 0:
-                    np.save(shufflefile,shuffle_indices)
-            else:
-                np.save(shufflefile,shuffle_indices)
-        else:
-            try:
-                shuffle_indices = np.load(shufflefile)
-            except:
-                shuffle_indices = np.random.permutation(len(files))
+        shuffle_indices = np.random.permutation(len(files))
         files = files[shuffle_indices]
 
     return files
