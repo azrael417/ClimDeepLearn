@@ -262,7 +262,9 @@ def deeplab_v3_plus_generator(num_classes,
                             logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1',
                                                        data_format=decoder_fmt)
                             if decoder_fmt == 'NCHW':
-                                logits = tf.transpose(logits, [ 0, 2, 3, 1 ])
+                                logits = ensure_type(tf.transpose(logits, [ 0, 2, 3, 1 ]), tf.float32)
+                            else:
+                                logits = ensure_type(logits, tf.float32)
                         else:
                             print('ERROR: unknown decoder type:', decoder)
                             assert False

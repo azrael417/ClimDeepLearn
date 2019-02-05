@@ -87,7 +87,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, dow
 
     #parameters
     per_rank_output = False
-    loss_print_interval = 10
+    loss_print_interval = 1
 
     #session config
     sess_config=tf.ConfigProto(inter_op_parallelism_threads=1, #1

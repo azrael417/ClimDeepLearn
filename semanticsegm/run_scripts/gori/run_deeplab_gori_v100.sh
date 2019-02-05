@@ -62,6 +62,7 @@ test=0
 lag=0
 prec=16
 batch=2
+scale_factor=0.1
 
 #stage in
 if [ ${stage} -eq 1 ]; then
@@ -78,16 +79,17 @@ if [ ${train} -eq 1 ]; then
                                        --datadir_validation ${scratchdir}/validation \
                                        --validation_size ${numfiles_validation} \
                                        --chkpt_dir checkpoint.fp${prec}.lag${lag} \
+                                       --disable_checkpoint \
                                        --epochs 20 \
                                        --fs local \
-                                       --loss weighted_mean \
+                                       --loss weighted \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
-                                       --model=resnet_v2_50 \
-                                       --scale_factor 0.1 \
+                                       --model "resnet_v2_50" \
+                                       --scale_factor ${scale_factor} \
                                        --batch ${batch} \
-                                       --decoder deconv1x \
+                                       --decoder "deconv1x" \
                                        --device "/device:cpu:0" \
-                                       --dtype float${prec} \
+                                       --dtype "float${prec}" \
 				       --label_id 0 \
                                        --data_format "channels_last" |& tee out.fp${prec}.lag${lag}.train
 fi
@@ -100,13 +102,13 @@ if [ ${test} -eq 1 ]; then
 					   --output_graph deepcam_inference.pb \
                                            --output output_test_5 \
                                            --fs local \
-                                           --loss weighted_mean \
-                                           --model=resnet_v2_50 \
-                                           --scale_factor 0.1 \
+                                           --loss weighted \
+                                           --model "resnet_v2_50" \
+                                           --scale_factor ${scale_factor} \
                                            --batch ${batch} \
-                                           --decoder deconv1x \
+                                           --decoder "deconv" \
                                            --device "/device:cpu:0" \
-                                           --dtype float${prec} \
+                                           --dtype "float${prec}" \
 					   --label_id 0 \
                                            --data_format "channels_last" |& tee out.fp${prec}.lag${lag}.test
 fi
