@@ -96,7 +96,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
             channel_list = list(f['climate']['channels'])
             channels = [ channel_list.index(c) for c in channels ]
 
-        data = f['climate']['data'][channels,:,:].astype(dtype)
+        data = f['climate']['data'][channels,:,:].astype(np.float32)
 
         #get label
         label = f['climate']['labels'][...].astype(np.int32)
@@ -115,12 +115,12 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
         chan = label_id if label_id else np.random.randint(low=0, high=label.shape[0])
         label = label[chan,:,:]
 
-    # cast data and labels if needed
-    #if data.dtype != dtype:
-    #    data = data.astype(dtype)
+    # cast data and labels if needed: important, do that after min-max norming
+    if data.dtype != dtype:
+        data = data.astype(dtype)
 
-    #if label.dtype != np.int32:
-    #    label = label.astype(np.int32)
+    if label.dtype != np.int32:
+        label = label.astype(np.int32)
 
     if sample_target is not None:
         # determine the number of pixels in each of the three classes

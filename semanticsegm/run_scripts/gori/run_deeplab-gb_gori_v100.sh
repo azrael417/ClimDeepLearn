@@ -30,9 +30,11 @@ sruncmd="srun -u --mpi=pmi2 -N ${SLURM_NNODES} -n $(( ${SLURM_NNODES} * ${ranksp
 #set up run directory
 run_dir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/runs/deeplab-old/run1_ngpus1
 mkdir -p ${run_dir}
+rm -rf ${run_dir}/*
 cp ../../deeplab-tf/deeplab-gb-tf.py ${run_dir}/
-cp ../../utils/climseg_helpers.py ${run_dir}/
-#cp ../../utils/data_helpers.py ${run_dir}/
+cp ../../utils/common_helpers.py ${run_dir}/
+#cp ../../utils/climseg_helpers.py ${run_dir}/
+cp ../../utils/data_helpers.py ${run_dir}/
 cp ../../utils/graph_flops.py ${run_dir}/
 
 #step in

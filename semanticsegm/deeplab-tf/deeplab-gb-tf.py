@@ -57,7 +57,8 @@ try:
 except:
     script_path = '.'
 sys.path.append(os.path.join(script_path, '..', 'utils'))
-from climseg_helpers import *
+#from climseg_helpers import h5_input_reader
+from common_helpers import *
 from data_helpers import *
 import graph_flops
 

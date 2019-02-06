@@ -29,7 +29,8 @@ sruncmd="srun -u --mpi=pmi2 -N ${SLURM_NNODES} -n $(( ${SLURM_NNODES} * ${ranksp
 datadir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve
 #datadir=/data1/mudigonda/missing_files_for_gb_video
 #scratchdir=${DW_PERSISTENT_STRIPED_DeepCAM}/$(whoami)
-scratchdir=/dev/shm/tkurth/deepcam/data
+#scratchdir=/dev/shm/tkurth/deepcam/data
+scratchdir=${datadir}
 numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
@@ -65,10 +66,14 @@ batch=2
 scale_factor=0.1
 
 #stage in
-if [ ${stage} -eq 1 ]; then
-cmd="srun --mpi=pmi2 -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 80 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation} ${numfiles_test}"
-echo ${cmd}
-${cmd}
+if [ "${scratchdir}" != "${datadir}" ]; then
+    if [ ${stage} -eq 1 ]; then
+	cmd="srun --mpi=pmi2 -N ${SLURM_NNODES} -n ${SLURM_NNODES} -c 80 ./stage_in_parallel.sh ${datadir} ${scratchdir} ${numfiles_train} ${numfiles_validation} ${numfiles_test}"
+	echo ${cmd}
+	${cmd}
+    fi
+else
+    echo "Scratchdir and datadir is the same, no staging needed!"
 fi
 
 #train
