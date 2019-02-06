@@ -340,25 +340,25 @@ def deeplab_v3_plus_generator(num_classes,
     return model
 
 
-#def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, dtype, shuffle=False):
-#    if comm_size > 1:
-#        # use an equal number of files per shard, leaving out any leftovers
-#        per_shard = len(datafilelist) // comm_size
-#        sublist = datafilelist[0:per_shard * comm_size]
-#        dataset = tf.data.Dataset.from_tensor_slices(sublist)
-#        dataset = dataset.shard(comm_size, comm_rank)
-#    else:
-#        dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
-#    if shuffle:
-#        dataset = dataset.shuffle(buffer_size=100)
-#    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
-#                          num_parallel_calls = 4)
-#    dataset = dataset.prefetch(16)
-#    # make sure all batches are equal in size
-#    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
-#    dataset = dataset.repeat(num_epochs)
-#    
-#    return dataset
+def create_dataset(h5ir, datafilelist, batchsize, num_epochs, comm_size, comm_rank, dtype, shuffle=False):
+    if comm_size > 1:
+        # use an equal number of files per shard, leaving out any leftovers
+        per_shard = len(datafilelist) // comm_size
+        sublist = datafilelist[0:per_shard * comm_size]
+        dataset = tf.data.Dataset.from_tensor_slices(sublist)
+        dataset = dataset.shard(comm_size, comm_rank)
+    else:
+        dataset = tf.data.Dataset.from_tensor_slices(datafilelist)
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=100)
+    dataset = dataset.map(map_func=lambda dataname: tuple(tf.py_func(h5ir.read, [dataname], [dtype, tf.int32, dtype, tf.string])),
+                          num_parallel_calls = 4)
+    dataset = dataset.prefetch(16)
+    # make sure all batches are equal in size
+    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batchsize))
+    dataset = dataset.repeat(num_epochs)
+    
+    return dataset
 
 
 #                                       label predict color
