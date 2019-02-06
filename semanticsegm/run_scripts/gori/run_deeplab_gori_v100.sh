@@ -96,7 +96,7 @@ if [ ${train} -eq 1 ]; then
                                        --device "/device:cpu:0" \
                                        --dtype "float${prec}" \
 				       --label_id 0 \
-                                       --data_format "channels_last" |& tee out.fp${prec}.lag${lag}.train
+                                       --data_format "channels_first" |& tee out.fp${prec}.lag${lag}.train
 fi
 
 if [ ${test} -eq 1 ]; then

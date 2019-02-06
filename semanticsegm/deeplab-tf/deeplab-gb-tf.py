@@ -240,6 +240,8 @@ def deeplab_v3_plus_generator(num_classes,
         inputs_size = tf.shape(inputs)[1:3]
         net = end_points[base_architecture + '/block4']
         encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training)
+        
+        print("encoder out shape: ",encoder_output.shape)
 
         with tf.variable_scope("decoder"):
             with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope(batch_norm_decay=batch_norm_decay)):
