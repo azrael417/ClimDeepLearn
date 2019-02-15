@@ -30,6 +30,6 @@ srun -n 2920 --cpu_bind=cores --mem_bind=local teca_tc_detect \
     --input_regex ${files_regex} \
     --candidate_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_medium/candidates.bin \
     --track_file /global/project/projectdirs/dasrepo/gb2018/teca/teca_HAPPI15_run1_medium/tracks.bin \ 
-    --candidates::min_vorticity_850mb 1.5e-4 \
-    --candidates::max_core_temperature_delta 0.7 \
-    --candidates::max_pressure_delta 350.0\
+    --candidates::min_vorticity_850mb .5e-4 \
+    --candidates::max_core_temperature_delta 0.3 \
+    --candidates::max_pressure_delta 150.0\
