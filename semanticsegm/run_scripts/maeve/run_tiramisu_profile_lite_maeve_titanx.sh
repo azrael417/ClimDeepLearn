@@ -45,8 +45,9 @@ train=1
 test=0
 
 #list of metrics
-#metrics="time flop_count_sp sysmem_read_transactions sysmem_write_transactions dram_read_transactions dram_write_transactions l2_read_transactions l2_write_transactions gld_transactions gst_transactions"
-metrics="time"
+metrics="time flop_count_sp,sysmem_read_transactions,sysmem_write_transactions,dram_read_transactions,dram_write_transactions,l2_read_transactions,l2_write_transactions"
+#"gld_transactions gst_transactions"
+#metrics="time"
 
 if [ ${train} -eq 1 ]; then
     for metric in ${metrics}; do
@@ -55,7 +56,7 @@ if [ ${train} -eq 1 ]; then
       if [ "${metric}" == "time" ]; then
 	  profilestring="nvprof"
       else
-	  profilestring="nvprof --metrics ${metric}"
+	  profilestring="nvprof --replay-mode application --metrics ${metric}"
       fi
       runid=0
       runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.${metricname}.run* | tail -n1 | awk '{print $9}')
