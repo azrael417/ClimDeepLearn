@@ -38,7 +38,7 @@ blocks="2 2 2 4 5"
 #blocks="3 3 4 4 7 7"
 
 #create run dir
-run_dir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/runs/run1_ngpus1
+run_dir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/runs/run2_ngpus1
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
 mkdir -p ${run_dir}
 
@@ -59,37 +59,41 @@ cd ${run_dir}
 lag=0
 train=1
 test=0
+prec=32
 
 #list of metrics
-#metrics="time flop_count_sp sysmem_read_transactions sysmem_write_transactions dram_read_transactions dram_write_transactions l2_read_transactions l2_write_transactions gld_transactions gst_transactions"
-metrics="time flop_count_sp gld_transactions gst_transactions"
+#metrics="time"
+metrics="smsp__sass_thread_inst_executed_op_fadd_pred_on.sum,smsp__sass_thread_inst_executed_op_fmul_pred_on.sum,smsp__sass_thread_inst_executed_op_ffma_pred_on.sum,\
+lts__t_sectors_aperture_sysmem_op_read.sum,lts__t_sectors_aperture_sysmem_op_write.sum,\
+dram__sectors_read.sum,dram__sectors_write.sum,\
+lts__t_sectors_op_read.sum,lts__t_sectors_op_write.sum,\
+l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_bytes_pipe_lsu_mem_global_op_st.sum"
 
 if [ ${train} -eq 1 ]; then
     for metric in ${metrics}; do
       metricname=${metric//,/-}
       echo "Starting Training Profiling for Metric ${metric}"
       if [ "${metric}" == "time" ]; then
-	  profilestring="nvprof"
+	  profilestring="nv-nsight-cu-cli --target-processes=all"
       else
-	  profilestring="nvprof --metrics ${metric}"
+	  profilestring="nv-nsight-cu-cli --target-processes=all --metrics ${metric}"
       fi
       runid=0
-      runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.${metricname}.run* | tail -n1 | awk '{print $9}')
+      runfiles=$(ls -latr out.lite.fp${prec}.lag${lag}.train.allmetrics.run*.profile | tail -n1 | awk '{print $9}')
       if [ ! -z ${runfiles} ]; then
 	  runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
       fi
 
       #set profile string
-      profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.${metricname}.nvprof"
-      profilestring=""
-      #profilestring=${profilestring}" --csv"
+      profilestring=${profilestring}" -f -o out.lite.fp${prec}.lag${lag}.train.allmetrics.run${runid}.profile"
+      #profilestring=
   
-      ${sruncmd} ${profilestring} python -u ./tiramisu-tf-train.py      --datadir_train ${scratchdir}/train \
+      ${sruncmd} ${profilestring} $(which python) -u ./tiramisu-tf-train.py      --datadir_train ${scratchdir}/train \
                                                                         --train_size $(( ${batch} * 3 )) \
 	                                                                --datadir_validation ${scratchdir}/validation \
 							                --validation_size ${numfiles_validation} \
 	                                                                --disable_checkpoints \
-							                --chkpt_dir checkpoint.fp32.lag${lag} \
+							                --chkpt_dir checkpoint.fp${prec}.lag${lag} \
 							                --downsampling ${downsampling} \
 							                --downsampling_mode "center-crop" \
 							                --disable_imsave \
@@ -105,7 +109,8 @@ if [ ${train} -eq 1 ]; then
 							                --batch ${batch} \
 							                --use_batchnorm \
 							                --label_id 0 \
-							                --data_format "channels_first" |& tee out.lite.fp32.lag${lag}.train.${metricname}.run${runid}
+	                                                                --dtype float${prec} \
+							                --data_format "channels_first" |& tee out.lite.fp${prec}.lag${lag}.train.allmetrics.run${runid}
       exit
     done
 fi
