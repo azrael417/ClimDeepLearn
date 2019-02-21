@@ -31,12 +31,6 @@ numfiles_train=1500
 numfiles_validation=300
 numfiles_test=500
 
-#network parameters
-downsampling=4
-batch=8
-#blocks="2 2 2 4 5"
-blocks="3 3 4 4 7 7"
-
 #create run dir
 run_dir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/runs/tiramisu/run1_ngpus1_lite
 #rundir=${WORK}/data/tiramisu/runs/run_nnodes16_j6415751
@@ -56,10 +50,19 @@ cp ../../tiramisu-tf/tiramisu_model.py ${run_dir}/
 cd ${run_dir}
 
 #some parameters
+#mode of operation
 stage=0
-lag=0
 train=1
 test=0
+#network parameter
+downsampling=1
+blocks="2 2 2 4 5"
+#blocks="3 3 4 4 7 7"
+lag=0
+prec=16
+batch=2
+scale_factor=0.1
+learning_rate=0.00001
 
 #stage in
 if [ ${stage} -eq 1 ]; then
@@ -72,7 +75,7 @@ fi
 if [ ${train} -eq 1 ]; then
   echo "Starting Training"
   runid=0
-  runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.run* | tail -n1 | awk '{print $9}')
+  runfiles=$(ls -latr out.lite.fp${prec}.lag${lag}.train.run* | tail -n1 | awk '{print $9}')
   if [ ! -z ${runfiles} ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
@@ -81,7 +84,7 @@ if [ ${train} -eq 1 ]; then
                                         --train_size ${numfiles_train} \
                                         --datadir_validation ${scratchdir}/validation \
                                         --validation_size ${numfiles_validation} \
-                                        --chkpt_dir checkpoint.fp32.lag${lag} \
+                                        --chkpt_dir checkpoint.fp${prec}.lag${lag} \
 					--downsampling ${downsampling} \
                                         --downsampling_mode "center-crop" \
                                         --disable_imsave \
@@ -92,19 +95,19 @@ if [ ${train} -eq 1 ]; then
                                         --growth 32 \
                                         --filter-sz 5 \
                                         --loss weighted \
-                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
-                                        --scale_factor 1.0 \
+                                        --optimizer opt_type=LARC-Adam,learning_rate=${learning_rate},gradient_lag=${lag} \
+                                        --scale_factor ${scale_factor} \
                                         --batch ${batch} \
-					--use_batchnorm \
                                         --label_id 0 \
-					--data_format "channels_first" |& tee out.lite.fp32.lag${lag}.train.run${runid}
+                                        --dtype float${prec} \
+					--data_format "channels_first" |& tee out.lite.fp${prec}.lag${lag}.train.run${runid}
 fi
 
 #test
 if [ ${test} -eq 1 ]; then
   echo "Starting Testing"
   runid=0
-  runfiles=$(ls -latr out.lite.fp32.lag${lag}.test.run* | tail -n1 | awk '{print $9}')
+  runfiles=$(ls -latr out.lite.fp${prec}.lag${lag}.test.run* | tail -n1 | awk '{print $9}')
   if [ ! -z ${runfiles} ]; then
       runid=$(echo ${runfiles} | awk '{split($1,a,"run"); print a[1]+1}')
   fi
@@ -114,7 +117,7 @@ if [ ${test} -eq 1 ]; then
                                            --downsampling ${downsampling} \
                                            --downsampling_mode "center-crop" \
                                            --channels 0 1 2 10 \
-                                           --chkpt_dir checkpoint.fp32.lag${lag} \
+                                           --chkpt_dir checkpoint.fp${prec}.lag${lag} \
 					   --output_graph tiramisu_inference.pb \
                                            --output output_test \
                                            --fs local \
@@ -122,9 +125,9 @@ if [ ${test} -eq 1 ]; then
 					   --growth 32 \
 					   --filter-sz 5 \
                                            --loss weighted \
-                                           --scale_factor 1.0 \
+                                           --scale_factor ${scale_factor} \
                                            --batch ${batch} \
-					   --use_batchnorm \
                                            --label_id 0 \
-                                           --data_format "channels_first" |& tee out.lite.fp32.lag${lag}.test.run${runid}
+                                           --dtype float${prec} \
+                                           --data_format "channels_first" |& tee out.lite.fp${prec}.lag${lag}.test.run${runid}
 fi

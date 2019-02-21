@@ -153,7 +153,9 @@ def deeplab_v3_plus_generator(num_classes,
         inputs_size = tf.shape(inputs)[1:3]
         net = end_points[base_architecture + '/block4']
         encoder_output = atrous_spatial_pyramid_pooling(net, output_stride, batch_norm_decay, is_training, model_arg_scope=model_arg_scope)
-
+        
+        print("encoder out shape: ",encoder_output.shape)
+        
         if data_format == "channels_last":
             decoder_fmt = 'NHWC'
             ch_axis = 3
@@ -202,7 +204,7 @@ def deeplab_v3_plus_generator(num_classes,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
 				                             padding='same',
-                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             data_format=data_format,
                                                              filters=encoder_channels,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
@@ -217,7 +219,7 @@ def deeplab_v3_plus_generator(num_classes,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
 				                             padding='same',
-                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             data_format=data_format,
                                                              filters=256,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
@@ -226,7 +228,7 @@ def deeplab_v3_plus_generator(num_classes,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
 				                             padding='same',
-                                                             data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                             data_format=data_format,
                                                              filters=256,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
@@ -235,26 +237,26 @@ def deeplab_v3_plus_generator(num_classes,
                                 # incorporate input data at this level
                                 skip = tf.layers.conv2d(inputs, 64, [3, 3],
                                                         padding='same',
-                                                        data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                        data_format=data_format,
 				                        kernel_initializer=tfk.initializers.he_uniform(),
 				                        bias_initializer=tf.initializers.zeros(),
                                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
                                 skip = tf.layers.conv2d(skip, 128, [3, 3],
                                                         padding='same',
-                                                        data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                        data_format=data_format,
 				                        kernel_initializer=tfk.initializers.he_uniform(),
 				                        bias_initializer=tf.initializers.zeros(),
                                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
                                 net = tf.concat([net, skip], axis=ch_axis)
                                 net = tf.layers.conv2d(net, 256, [3, 3],
                                                        padding='same',
-                                                       data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                       data_format=data_format,
 				                       kernel_initializer=tfk.initializers.he_uniform(),
 				                       bias_initializer=tf.initializers.zeros(),
                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
                                 net = tf.layers.conv2d(net, 256, [3, 3],
                                                        padding='same',
-                                                       data_format='channels_last' if (decoder_fmt == 'NHWC') else 'channels_first',
+                                                       data_format=data_format,
 				                       kernel_initializer=tfk.initializers.he_uniform(),
 				                       bias_initializer=tf.initializers.zeros(),
                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
@@ -262,7 +264,9 @@ def deeplab_v3_plus_generator(num_classes,
                             logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1',
                                                        data_format=decoder_fmt)
                             if decoder_fmt == 'NCHW':
-                                logits = tf.transpose(logits, [ 0, 2, 3, 1 ])
+                                logits = ensure_type(tf.transpose(logits, [ 0, 2, 3, 1 ]), tf.float32)
+                            else:
+                                logits = ensure_type(logits, tf.float32)
                         else:
                             print('ERROR: unknown decoder type:', decoder)
                             assert False

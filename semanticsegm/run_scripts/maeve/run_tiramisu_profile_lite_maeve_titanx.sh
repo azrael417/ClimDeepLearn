@@ -45,18 +45,23 @@ train=1
 test=0
 
 #list of metrics
-#metrics="time flop_count_sp sysmem_read_transactions,sysmem_write_transactions dram_read_transactions,dram_write_transactions l2_read_transactions,l2_write_transactions gld_transactions,gst_transactions"
-metrics="sysmem_read_transactions,sysmem_write_transactions l2_read_transactions,l2_write_transactions"
-#metrics="time"
+#metrics="time flop_count_sp,sysmem_read_transactions,sysmem_write_transactions,dram_read_transactions,dram_write_transactions,l2_read_transactions,l2_write_transactions,gld_transactionsgst_transactions"
+metrics="smsp__sass_thread_inst_executed_op_fadd_pred_on.sum,smsp__sass_thread_inst_executed_op_fmul_pred_on.sum,smsp__sass_thread_inst_executed_op_ffma_pred_on.sum,\
+lts__t_sectors_aperture_sysmem_op_read.sum,lts__t_sectors_aperture_sysmem_op_write.sum,\
+dram__sectors_read.sum,dram__sectors_write.sum,\
+lts__t_sectors_op_read.sum,lts__t_sectors_op_write.sum,\
+l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,l1tex__t_bytes_pipe_lsu_mem_global_op_st.sum"
 
 if [ ${train} -eq 1 ]; then
     for metric in ${metrics}; do
       metricname=${metric//,/-}
       echo "Starting Training Profiling for Metric ${metric}"
       if [ "${metric}" == "time" ]; then
-	  profilestring="nvprof"
+	  #profilestring="nvprof"
+	  profilestring="nv-nsight-cu-cli"
       else
-	  profilestring="nvprof --replay-mode application --metrics ${metric}"
+	  #profilestring="nvprof --replay-mode application --metrics ${metric}"
+	  profilestring="nv-nsight-cu-cli --metrics ${metric}"
       fi
       runid=0
       runfiles=$(ls -latr out.lite.fp32.lag${lag}.train.${metricname}.run* | tail -n1 | awk '{print $9}')
@@ -65,8 +70,8 @@ if [ ${train} -eq 1 ]; then
       fi
 
       #set profile string
-      profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.${metricname}.nvprof"
-      #profilestring=${profilestring}" --csv"
+      #profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.${metricname}.nvprof"
+      profilestring=${profilestring}" -f -o out.lite.fp32.lag${lag}.train.run${runid}.${metricname}.profile"
   
       ${profilestring} python -u ./tiramisu-tf-train.py      --datadir_train ${scratchdir}/train \
                                                              --train_size $(( ${batch} * 3 )) \

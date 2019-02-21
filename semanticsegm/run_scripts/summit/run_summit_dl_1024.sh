@@ -72,20 +72,20 @@ export OMPI_LD_PRELOAD_PREPEND="${scratchdir}/${VENV}/lib/directconv.so"
 #clean up crap
 rm shuffle_indices.npy
 
-#fp16-lag0
-echo "starting run_deeplab_deconv_fp16.sh" `date`
-jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv_fp16.sh ${scratchdir} 400 0.01 0.1 0 |& tee out.fp16.lag0.${LSB_JOBID}
-echo "finished run_deeplab_deconv_fp16.sh" `date`
+##fp16-lag0
+#echo "starting run_deeplab_deconv_fp16.sh" `date`
+#jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv_fp16.sh ${scratchdir} 400 0.01 0.1 0 |& tee out.fp16.lag0.${LSB_JOBID}
+#echo "finished run_deeplab_deconv_fp16.sh" `date`
 
 ##fp32-lag0
 #echo "starting run_deeplab_deconv.sh" `date`
-#jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv.sh ${scratchdir} 200 0.0064 0.1 0 |& tee out.fp32.lag0.${LSB_JOBID}
+#jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv.sh ${scratchdir} 200 0.0064 0.1 0 |& tee #out.fp32.lag0.${LSB_JOBID}
 #echo "finished run_deeplab_deconv.sh" `date`
 
-##fp16-lag1
-#echo "starting run_deeplab_deconv_fp16.sh" `date`
-#jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv_fp16.sh ${scratchdir} 200 0.0064 0.1 1 |& tee out.fp16.lag1.${LSB_JOBID}
-#echo "finished run_deeplab_deconv_fp16.sh" `date`
+#fp16-lag1
+echo "starting run_deeplab_deconv_fp16.sh" `date`
+jsrun ${jsrundebug} -n ${nnodes} -g 6 -c 42 -a ${nprocspn} --bind=proportional-packed:7 --launch_distribution=packed stdbuf -o0 ./run_deeplab_deconv_fp16.sh ${scratchdir} 200 0.0064 0.1 1 |& tee out.fp16.lag1.${LSB_JOBID}
+echo "finished run_deeplab_deconv_fp16.sh" `date`
 
 ##fp32-lag1
 #echo "starting run_deeplab_deconv.sh" `date`
