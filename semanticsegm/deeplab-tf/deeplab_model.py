@@ -156,24 +156,26 @@ def deeplab_v3_plus_generator(num_classes,
         
         print("encoder out shape: ",encoder_output.shape)
         
-        if data_format == "channels_last":
-            decoder_fmt = 'NHWC'
-            ch_axis = 3
-        else:
-            decoder_fmt = 'NCHW'
-            ch_axis = 1
+        #make sure it is channels last!!!!
+        decoder_fmt = "NHWC"
+        ch_axis = 3
+        #if data_format == "channels_last":
+        #    decoder_fmt = 'NHWC'
+        #    ch_axis = 3
+        #else:
+        #    decoder_fmt = 'NCHW'
+        #    ch_axis = 1
 
         with tf.variable_scope("decoder"):
             with tf.contrib.slim.arg_scope(model_arg_scope(batch_norm_decay=batch_norm_decay)):
                 with arg_scope([layers.batch_norm], is_training=is_training):
                     with tf.variable_scope("low_level_features"):
                         low_level_features = end_points[base_architecture + '/block1/unit_3/bottleneck_v2/conv1']
-                        low_level_features_size = tf.shape(low_level_features)[1:3]
-                        if decoder_fmt == 'NCHW':
-                            low_level_features = tf.transpose(low_level_features, [ 0, 3, 1, 2 ])
+                        #if decoder_fmt == 'NCHW':
+                        #    low_level_features = tf.transpose(low_level_features, [ 0, 3, 1, 2 ])
                         low_level_features = layers_lib.conv2d(low_level_features, 48,
-                                                               [1, 1], stride=1, scope='conv_1x1',
-                                                               data_format=decoder_fmt)
+                                                               [1, 1], stride=1, scope='conv_1x1')
+                        low_level_features_size = tf.shape(low_level_features)[1:3]
 
                     with tf.variable_scope("upsampling_logits"):
                         if decoder == 'bilinear':
@@ -189,37 +191,35 @@ def deeplab_v3_plus_generator(num_classes,
                             logits = tf.image.resize_bilinear(net, inputs_size, name='upsample_2')
                             logits = ensure_type(logits, low_level_features.dtype)
                         elif decoder.startswith('deconv'):
-                            if decoder_fmt == 'NCHW':
-                                encoder_output = tf.transpose(encoder_output, [ 0, 3, 1, 2 ])
-                                inputs = tf.transpose(inputs, [ 0, 3, 1, 2 ])
+                            #if decoder_fmt == 'NCHW':
+                            #    encoder_output = tf.transpose(encoder_output, [ 0, 3, 1, 2 ])
+                            #    inputs = tf.transpose(inputs, [ 0, 3, 1, 2 ])
                             # expect encoder output at 1/8x input, low level
                             #  features as 1/4x input
                             #print 'SIZES', encoder_output.shape.as_list(), low_level_features.shape.as_list(), inputs.shape.as_list()
-                            assert 8*encoder_output.shape.as_list()[2] == inputs.shape.as_list()[2]
-                            assert 4*low_level_features.shape.as_list()[2] == inputs.shape.as_list()[2]
-                            encoder_channels = encoder_output.shape.as_list()[ch_axis]
-                            low_level_channels = low_level_features.shape.as_list()[ch_axis]
-                            inputs_channels = inputs.shape.as_list()[ch_axis]
-                            net = tf.layers.conv2d_transpose(inputs=encoder_output,
+                            assert 8*encoder_output.shape.as_list()[1] == inputs.shape.as_list()[1]
+                            assert 4*low_level_features.shape.as_list()[1] == inputs.shape.as_list()[1]
+                            encoder_channels = encoder_output.shape.as_list()[3]
+                            low_level_channels = low_level_features.shape.as_list()[3]
+                            inputs_channels = inputs.shape.as_list()[3]
+                            net =  tf.layers.conv2d_transpose(inputs=encoder_output,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
-				                             padding='same',
-                                                             data_format=data_format,
+	                                                         padding='same',
+                                                             data_format='channels_last',
                                                              filters=encoder_channels,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
                                                              kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
-                            net = tf.concat([net, low_level_features], axis=ch_axis, name='concat')
-                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1',
-                                                    data_format=decoder_fmt)
-                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2',
-                                                    data_format=decoder_fmt)
+                            net = tf.concat([net, low_level_features], axis=3, name='concat')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_1')
+                            net = layers_lib.conv2d(net, 256, [3, 3], stride=1, scope='conv_3x3_2')
                             # two 2x deconvs instead of the 4x bilinear scale
                             net = tf.layers.conv2d_transpose(inputs=net,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
 				                             padding='same',
-                                                             data_format=data_format,
+                                                             data_format='channels_last',
                                                              filters=256,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
@@ -228,7 +228,7 @@ def deeplab_v3_plus_generator(num_classes,
                                                              strides=(2,2),
                                                              kernel_size=(3,3),
 				                             padding='same',
-                                                             data_format=data_format,
+                                                             data_format='channels_last',
                                                              filters=256,
 				                             kernel_initializer=tfk.initializers.he_uniform(),
 				                             bias_initializer=tf.initializers.zeros(),
@@ -237,36 +237,35 @@ def deeplab_v3_plus_generator(num_classes,
                                 # incorporate input data at this level
                                 skip = tf.layers.conv2d(inputs, 64, [3, 3],
                                                         padding='same',
-                                                        data_format=data_format,
+                                                        data_format='channels_last',
 				                        kernel_initializer=tfk.initializers.he_uniform(),
 				                        bias_initializer=tf.initializers.zeros(),
                                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
                                 skip = tf.layers.conv2d(skip, 128, [3, 3],
                                                         padding='same',
-                                                        data_format=data_format,
+                                                        data_format='channels_last',
 				                        kernel_initializer=tfk.initializers.he_uniform(),
 				                        bias_initializer=tf.initializers.zeros(),
                                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
-                                net = tf.concat([net, skip], axis=ch_axis)
+                                net = tf.concat([net, skip], axis=3)
                                 net = tf.layers.conv2d(net, 256, [3, 3],
                                                        padding='same',
-                                                       data_format=data_format,
+                                                       data_format='channels_last',
 				                       kernel_initializer=tfk.initializers.he_uniform(),
 				                       bias_initializer=tf.initializers.zeros(),
                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
                                 net = tf.layers.conv2d(net, 256, [3, 3],
                                                        padding='same',
-                                                       data_format=data_format,
+                                                       data_format='channels_last',
 				                       kernel_initializer=tfk.initializers.he_uniform(),
 				                       bias_initializer=tf.initializers.zeros(),
                                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=_WEIGHT_DECAY))
 
-                            logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1',
-                                                       data_format=decoder_fmt)
-                            if decoder_fmt == 'NCHW':
-                                logits = ensure_type(tf.transpose(logits, [ 0, 2, 3, 1 ]), tf.float32)
-                            else:
-                                logits = ensure_type(logits, tf.float32)
+                            logits = layers_lib.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='conv_1x1')
+                            #if decoder_fmt == 'NCHW':
+                            #    logits = ensure_type(tf.transpose(logits, [ 0, 2, 3, 1 ]), tf.float32)
+                            #else:
+                            logits = ensure_type(logits, tf.float32)
                         else:
                             print('ERROR: unknown decoder type:', decoder)
                             assert False

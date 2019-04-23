@@ -260,7 +260,7 @@ def main(device, input_path_train, input_path_validation, downsampling_fact, dow
             raise ValueError("Error, loss type {} not supported.",format(loss_type))
 
         #determine flops
-        flops = graph_flops.graph_flops(format="NHWC" if data_format=="channels_last" else "NCHW", batch=batch, sess_config=sess_config)
+        flops = graph_flops.graph_flops(format="NHWC" if data_format=="channels_last" else "NCHW", verbose=False, batch=batch, sess_config=sess_config)
         flops *= comm_size
         if comm_rank == 0:
             print('training flops: {:.3f} TF/step'.format(flops * 1e-12))

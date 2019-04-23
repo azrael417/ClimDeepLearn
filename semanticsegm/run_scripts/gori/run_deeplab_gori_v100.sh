@@ -7,13 +7,11 @@
 #SBATCH --gres-flags=enforce-binding
 #SBATCH --exclusive
 
-#load modules
+#set up python stuff
 module load cuda
 module load nccl
 module load python3/3.6-anaconda-4.4
-
-#activate env
-source activate thorstendl-gori-py3-tf
+source activate thorstendl-gori-py3-tf 
 
 #rankspernode
 rankspernode=1
@@ -23,7 +21,7 @@ export OMP_NUM_THREADS=$(( 40 / ${rankspernode} ))
 export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 export HDF5_USE_FILE_LOCKING=FALSE
-sruncmd="srun -u --mpi=pmi2 -N ${SLURM_NNODES} -n $(( ${SLURM_NNODES} * ${rankspernode} )) -c $(( 80 / ${rankspernode} )) --cpu_bind=sockets"
+sruncmd="srun -u --mpi=pmi2 -N ${SLURM_NNODES} -n $(( ${SLURM_NNODES} * ${rankspernode} )) -c $(( 80 / ${rankspernode} )) --cpu_bind=cores"
 
 #directories
 datadir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/data/segm_h5_v3_new_split_maeve
@@ -39,6 +37,7 @@ numfiles_test=500
 #run_dir=/data1/tkurth/deeplab/runs/run_1
 run_dir=/project/projectdirs/mpccc/tkurth/DataScience/gb2018/runs/deeplab/run1_ngpus1
 
+rm -rf ${run_dir}/*
 mkdir -p ${run_dir}
 
 #copy relevant files
@@ -86,7 +85,7 @@ if [ ${train} -eq 1 ]; then
                                        --chkpt_dir checkpoint.fp${prec}.lag${lag} \
                                        --disable_checkpoint \
                                        --epochs 20 \
-                                       --fs local \
+                                       --fs global \
                                        --loss weighted \
                                        --optimizer opt_type=LARC-Adam,learning_rate=0.0001,gradient_lag=${lag} \
                                        --model "resnet_v2_50" \
@@ -111,7 +110,7 @@ if [ ${test} -eq 1 ]; then
                                            --model "resnet_v2_50" \
                                            --scale_factor ${scale_factor} \
                                            --batch ${batch} \
-                                           --decoder "deconv" \
+                                           --decoder "deconv1x" \
                                            --device "/device:cpu:0" \
                                            --dtype "float${prec}" \
 					   --label_id 0 \

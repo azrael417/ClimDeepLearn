@@ -74,9 +74,9 @@ if [ ${train} -eq 1 ]; then
       metricname=${metric//,/-}
       echo "Starting Training Profiling for Metric ${metric}"
       if [ "${metric}" == "time" ]; then
-	  profilestring="nv-nsight-cu-cli --target-processes=all"
+	  profilestring="nv-nsight-cu-cli"
       else
-	  profilestring="nv-nsight-cu-cli --target-processes=all --metrics ${metric}"
+	  profilestring="nv-nsight-cu-cli --metrics ${metric}"
       fi
       runid=0
       runfiles=$(ls -latr out.lite.fp${prec}.lag${lag}.train.allmetrics.run*.profile | tail -n1 | awk '{print $9}')
