@@ -403,8 +403,8 @@ def main(input_path_train, input_path_validation, channels, weights, image_dir, 
     loss_print_interval = 10
     
     #session config
-    sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #1
-                               intra_op_parallelism_threads=1, #6
+    sess_config=tf.ConfigProto(inter_op_parallelism_threads=6, #6
+                               intra_op_parallelism_threads=1, #1
                                log_device_placement=False,
                                allow_soft_placement=True)
     sess_config.gpu_options.visible_device_list = str(comm_local_rank)

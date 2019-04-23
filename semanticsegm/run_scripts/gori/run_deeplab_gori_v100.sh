@@ -10,11 +10,13 @@
 #set up python stuff
 module load cuda
 module load nccl
+module load gcc/7.3.0
+module load openmpi/3.1.0-ucx
 module load python3/3.6-anaconda-4.4
 source activate thorstendl-gori-py3-tf 
 
 #rankspernode
-rankspernode=1
+rankspernode=8
 
 #openmp stuff
 export OMP_NUM_THREADS=$(( 40 / ${rankspernode} ))
@@ -59,7 +61,7 @@ stage=1
 train=1
 test=0
 #network
-lag=0
+lag=1
 prec=16
 batch=2
 scale_factor=0.1
