@@ -112,7 +112,7 @@ def _h5_input_subprocess_reader(path, channels, weights, minvals, maxvals, updat
     #if new dataset is used, label has a batch index.
     #just take the first entry for the moment
     if label.ndim == 3:
-        chan = label_id if label_id else np.random.randint(low=0, high=label.shape[0])
+        chan = np.random.randint(low=0, high=label.shape[0]) if label_id==None else label_id
         label = label[chan,:,:]
 
     # cast data and labels if needed: important, do that after min-max norming
