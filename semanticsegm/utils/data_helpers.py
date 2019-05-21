@@ -226,7 +226,7 @@ class h5_input_reader(object):
         #just take the first entry for the moment
         if profile: timers["select_channels"] = -time.time()
         if label.ndim == 3:
-            chan = self.label_id if self.label_id else np.random.randint(low=0, high=label.shape[0])
+            chan = np.random.randint(low=0, high=label.shape[0]) if self.label_id==None else self.label_id
             label = label[chan,:,:]
         if profile: timers["select_channels"] += time.time()
 
